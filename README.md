@@ -9,6 +9,12 @@ The project includes:
 - secure infrastructure setup for development and production parity
 - database migrations and operational tooling
 
+Backend Service (WIP) :
+- Go + Fiber (planned) / routes folder
+- JWT auth (planned)
+- Health check endpoint
+- Docker compose for local dev (planned)
+
 Infrastructure documentation is included to explain **how the backend is deployed and operated**, not as a standalone infra project.
 
 ---
@@ -259,8 +265,8 @@ psql "$DATABASE_URL" -c "\dt"
 
 - Bastion is for bootstrap / emergency only
 - Long-term migrations should run via:
-      - CI/CD
-      - ECS task / Kubernetes Job
+  - CI/CD
+  - ECS task / Kubernetes Job
 - Keep migrations in the repository
 - Do not rely on manual bastion access in production
 
