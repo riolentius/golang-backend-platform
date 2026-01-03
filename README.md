@@ -1,5 +1,19 @@
 # Cahaya Gading – AWS Database & Migration Setup
 
+## Project Status
+
+🚧 **Work in progress (early-stage foundation)**
+
+This repository currently focuses on:
+
+- Infrastructure setup
+- Secure database access patterns
+- Migration strategy
+
+The application layer (API, auth, business logic) is under active development.
+
+This project is intentionally built incrementally to reflect real-world system evolution.
+
 This document describes how to set up AWS infrastructure from scratch, access a private PostgreSQL RDS instance via a bastion host, and run database migrations using Goose.
 
 This setup is intended for **development / learning**, but follows **production-correct patterns**.
@@ -56,7 +70,7 @@ Example:
 
 ## 2. Security Groups
 
-### 2.1 Bastion Security Group (`cahaya-sg-bastion`)
+### 2.1 Bastion Security Group (`<your-project-bastion>`)
 
 **Inbound**
 
@@ -72,12 +86,12 @@ Example:
 
 ---
 
-### 2.2 RDS Security Group (`cahaya-sg-db`)
+### 2.2 RDS Security Group (`<your-project-db>`)
 
 **Inbound**
 
 - PostgreSQL (5432)
-- Source: `cahaya-sg-bastion`
+- Source: `<your-project-bastion>`
 
 **Outbound**
 
@@ -91,7 +105,7 @@ Example:
 - Instance class: `db.t4g.micro`
 - Public access: ❌ Disabled
 - Subnet group: Private subnets only
-- Security Group: `cahaya-sg-db`
+- Security Group: `<your-project-db>`
 
 > Note: **DB instance identifier ≠ database name**
 
@@ -103,7 +117,7 @@ Example:
 
 - Instance type: `t3.micro` or `t4g.micro`
 - Subnet: Public
-- Security group: `cahaya-sg-bastion`
+- Security group: `<your-project-bastion>`
 - IAM Role: `AmazonSSMManagedInstanceCore`
 
 ---
@@ -156,19 +170,19 @@ psql -h <RDS_ENDPOINT> -U postgres -d postgres -p 5432
 ## 8. Create Application Database User
 
 ```sql
-CREATE USER cahaya_app WITH PASSWORD 'STRONG_PASSWORD';
+CREATE USER <your_app> WITH PASSWORD 'STRONG_PASSWORD';
 
-GRANT CONNECT ON DATABASE "cahaya-gading-db" TO cahaya_app;
+GRANT CONNECT ON DATABASE "<your-project-db>" TO <your_app>;
 
-\c "cahaya-gading-db"
+\c "<your-project-db>"
 
-GRANT USAGE, CREATE ON SCHEMA public TO cahaya_app;
-
-ALTER DEFAULT PRIVILEGES IN SCHEMA public
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO cahaya_app;
+GRANT USAGE, CREATE ON SCHEMA public TO your_app;
 
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
-GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO cahaya_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO your_app;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO your_app;
 ```
 
 ---
@@ -194,7 +208,7 @@ uname -m
 
 ```bash
 set +H
-export DATABASE_URL='postgres://cahaya_app:PASSWORD@<RDS_ENDPOINT>:5432/cahaya-gading-db?sslmode=require'
+export DATABASE_URL='postgres://your_app:PASSWORD@<RDS_ENDPOINT>:5432/your-project-db?sslmode=require'
 ```
 
 Verify:
@@ -218,7 +232,7 @@ mkdir -p ~/migrations
 Extensions must be installed using admin user:
 
 ```bash
-psql -h <RDS_ENDPOINT> -U postgres -d cahaya-gading-db -p 5432 \
+psql -h <RDS_ENDPOINT> -U postgres -d your-project-db -p 5432 \
   -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
 ```
 

@@ -8,6 +8,7 @@ import (
 
 	"github.com/riolentius/cahaya-gading-backend/internal/config"
 	authhandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/auth"
+	httpmw "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/middleware"
 	"github.com/riolentius/cahaya-gading-backend/internal/repository/postgres"
 	authuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/auth"
 )
@@ -17,15 +18,24 @@ func RegisterRoutes(app *fiber.App, cfg config.Config, db *pgxpool.Pool) {
 		return c.JSON(fiber.Map{"ok": true})
 	})
 
-	// Auth wiring
+	api := app.Group("/api")
+
+	// --- Auth wiring (public login) ---
 	adminRepo := postgres.NewAdminRepo(db)
 	adminFinder := &adminFinderAdapter{repo: adminRepo}
 
 	loginUC := authuc.NewAdminLoginUsecase(adminFinder, cfg.JWTSecret, cfg.JWTExpiresMinutes)
 	loginHandler := authhandler.NewAdminLoginHandler(loginUC)
 
-	api := app.Group("/api")
 	api.Post("/admin/login", loginHandler.Handle)
+
+	// --- JWT Middleware (protected admin routes) ---
+	jwtMW := httpmw.NewJWTMiddleware(cfg.JWTSecret)
+
+	admin := api.Group("/admin", jwtMW.Protect())
+
+	meHandler := authhandler.NewAdminMeHandler()
+	admin.Get("/me", meHandler.Handle)
 }
 
 type adminFinderAdapter struct {
