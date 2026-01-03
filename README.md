@@ -258,7 +258,9 @@ psql "$DATABASE_URL" -c "\dt"
 ## 15. Best Practices
 
 - Bastion is for bootstrap / emergency only
-- Long-term migrations should run via: - CI/CD - ECS task - Kubernetes Job
+- Long-term migrations should run via:
+      - CI/CD
+      - ECS task / Kubernetes Job
 - Keep migrations in the repository
 - Do not rely on manual bastion access in production
 
@@ -270,7 +272,3 @@ psql "$DATABASE_URL" -c "\dt"
 - Goose migrations working
 - Cost under control
 - Ready for backend API development
-
-```yaml
-
-```
