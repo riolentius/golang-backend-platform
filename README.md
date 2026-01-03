@@ -1,22 +1,15 @@
-# Cahaya Gading – AWS Database & Migration Setup
+# Production Go Backend Service
 
-## Project Status
+This repository contains a Go-based backend service designed with
+production-first principles.
 
-🚧 **Work in progress (early-stage foundation)**
+The project includes:
+- a Golang backend service (API layer)
+- PostgreSQL database integration (AWS RDS)
+- secure infrastructure setup for development and production parity
+- database migrations and operational tooling
 
-This repository currently focuses on:
-
-- Infrastructure setup
-- Secure database access patterns
-- Migration strategy
-
-The application layer (API, auth, business logic) is under active development.
-
-This project is intentionally built incrementally to reflect real-world system evolution.
-
-This document describes how to set up AWS infrastructure from scratch, access a private PostgreSQL RDS instance via a bastion host, and run database migrations using Goose.
-
-This setup is intended for **development / learning**, but follows **production-correct patterns**.
+Infrastructure documentation is included to explain **how the backend is deployed and operated**, not as a standalone infra project.
 
 ---
 
