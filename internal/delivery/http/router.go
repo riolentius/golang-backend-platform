@@ -2,15 +2,17 @@ package http
 
 import (
 	"context"
-
 	"github.com/gofiber/fiber/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
-
 	"github.com/riolentius/cahaya-gading-backend/internal/config"
 	authhandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/auth"
-	httpmw "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/middleware"
+	producthandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/product"
+	pricehandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/product_price"
+	"github.com/riolentius/cahaya-gading-backend/internal/delivery/middleware"
 	"github.com/riolentius/cahaya-gading-backend/internal/repository/postgres"
 	authuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/auth"
+	productuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/product"
+	priceuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/product_price"
 )
 
 func RegisterRoutes(app *fiber.App, cfg config.Config, db *pgxpool.Pool) {
@@ -20,22 +22,48 @@ func RegisterRoutes(app *fiber.App, cfg config.Config, db *pgxpool.Pool) {
 
 	api := app.Group("/api")
 
-	// --- Auth wiring (public login) ---
+	// Auth wiring
 	adminRepo := postgres.NewAdminRepo(db)
 	adminFinder := &adminFinderAdapter{repo: adminRepo}
-
 	loginUC := authuc.NewAdminLoginUsecase(adminFinder, cfg.JWTSecret, cfg.JWTExpiresMinutes)
 	loginHandler := authhandler.NewAdminLoginHandler(loginUC)
 
+	// Public route
 	api.Post("/admin/login", loginHandler.Handle)
 
-	// --- JWT Middleware (protected admin routes) ---
-	jwtMW := httpmw.NewJWTMiddleware(cfg.JWTSecret)
+	// Protected admin group (MUST be defined before use)
+	admin := api.Group("/admin", middleware.RequireAdminJWT(middleware.JWTConfig{
+		Secret: cfg.JWTSecret,
+	}))
 
-	admin := api.Group("/admin", jwtMW.Protect())
+	admin.Get("/me", func(c *fiber.Ctx) error {
+		return c.JSON(fiber.Map{
+			"ok":     true,
+			"claims": c.Locals("claims"),
+		})
+	})
 
-	meHandler := authhandler.NewAdminMeHandler()
-	admin.Get("/me", meHandler.Handle)
+	// Products wiring
+	productRepo := postgres.NewProductRepo(db)
+	productStore := postgres.NewProductStoreAdapter(productRepo)
+	productUC := productuc.New(productStore)
+	productH := producthandler.New(productUC)
+
+	// Prices wiring
+	priceRepo := postgres.NewProductPriceRepo(db)
+	priceStore := postgres.NewProductPriceStoreAdapter(priceRepo)
+	priceUC := priceuc.New(priceStore)
+	priceH := pricehandler.New(priceUC)
+
+	// Product routes
+	admin.Post("/products", productH.Create)
+	admin.Get("/products", productH.List)
+	admin.Patch("/products/:id", productH.Update)
+
+	// Product price routes
+	admin.Post("/products/:id/prices", priceH.CreateForProduct)
+	admin.Get("/products/:id/prices", priceH.ListForProduct)
+	admin.Patch("/prices/:id", priceH.Update)
 }
 
 type adminFinderAdapter struct {

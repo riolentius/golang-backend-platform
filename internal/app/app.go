@@ -6,7 +6,6 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
-	"github.com/joho/godotenv"
 
 	"github.com/riolentius/cahaya-gading-backend/internal/config"
 	"github.com/riolentius/cahaya-gading-backend/internal/db"
@@ -14,13 +13,10 @@ import (
 )
 
 type App struct {
-	f   *fiber.App
-	cfg config.Config
+	f *fiber.App
 }
 
 func New() *App {
-	_ = godotenv.Load()
-
 	cfg := config.Load()
 
 	pool, err := db.NewPool(cfg.DatabaseURL)
@@ -29,18 +25,17 @@ func New() *App {
 	}
 
 	f := fiber.New(fiber.Config{
-		AppName: cfg.AppName,
+		AppName: "cahaya-gading-backend",
 	})
 
 	f.Use(recover.New())
 	f.Use(logger.New())
 
-	// updated signature
 	httpdelivery.RegisterRoutes(f, cfg, pool)
 
-	return &App{f: f, cfg: cfg}
+	return &App{f: f}
 }
 
 func (a *App) Run() error {
-	return a.f.Listen(":" + a.cfg.Port)
+	return a.f.Listen(":" + config.Load().Port)
 }
