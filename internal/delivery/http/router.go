@@ -8,11 +8,13 @@ import (
 	authhandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/auth"
 	producthandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/product"
 	pricehandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/product_price"
+	trxhandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/transaction"
 	"github.com/riolentius/cahaya-gading-backend/internal/delivery/middleware"
 	"github.com/riolentius/cahaya-gading-backend/internal/repository/postgres"
 	authuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/auth"
 	productuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/product"
 	priceuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/product_price"
+	trxuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/transaction"
 )
 
 func RegisterRoutes(app *fiber.App, cfg config.Config, db *pgxpool.Pool) {
@@ -54,6 +56,18 @@ func RegisterRoutes(app *fiber.App, cfg config.Config, db *pgxpool.Pool) {
 	priceStore := postgres.NewProductPriceStoreAdapter(priceRepo)
 	priceUC := priceuc.New(priceStore)
 	priceH := pricehandler.New(priceUC)
+
+	// Transactions wiring
+	trxRepo := postgres.NewTransactionRepo(db)
+	trxStore := postgres.NewTransactionStoreAdapter(trxRepo)
+	trxUC := trxuc.New(trxStore)
+	trxH := trxhandler.New(trxUC)
+
+	// Transaction routes
+	admin.Post("/transactions", trxH.Create)
+	admin.Get("/transactions", trxH.List)
+	admin.Get("/transactions/:id", trxH.Get)
+	admin.Patch("/transactions/:id/status", trxH.UpdateStatus)
 
 	// Product routes
 	admin.Post("/products", productH.Create)
