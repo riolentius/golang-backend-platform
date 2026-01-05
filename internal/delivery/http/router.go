@@ -6,15 +6,17 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riolentius/cahaya-gading-backend/internal/config"
 	authhandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/auth"
+	customerhandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/customer"
 	producthandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/product"
 	pricehandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/product_price"
 	trxhandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/transaction"
 	"github.com/riolentius/cahaya-gading-backend/internal/delivery/middleware"
 	"github.com/riolentius/cahaya-gading-backend/internal/repository/postgres"
 	authuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/auth"
+	customeruc "github.com/riolentius/cahaya-gading-backend/internal/usecase/customer"
 	productuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/product"
 	priceuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/product_price"
-	trxuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/transaction"
+	txuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/transaction"
 )
 
 func RegisterRoutes(app *fiber.App, cfg config.Config, db *pgxpool.Pool) {
@@ -62,6 +64,18 @@ func RegisterRoutes(app *fiber.App, cfg config.Config, db *pgxpool.Pool) {
 	trxStore := postgres.NewTransactionStoreAdapter(trxRepo)
 	trxUC := trxuc.New(trxStore)
 	trxH := trxhandler.New(trxUC)
+
+	// Customer wiring
+	customerRepo := postgres.NewCustomerRepo(db)
+	customerStore := postgres.NewCustomerStoreAdapter(customerRepo)
+	customerUC := customeruc.New(customerStore)
+	customerH := customerhandler.New(customerUC)
+
+	// Customer routes
+	admin.Post("/customers", customerH.Create)
+	admin.Get("/customers", customerH.List)
+	admin.Get("/customers/:id", customerH.GetByID)
+	admin.Patch("/customers/:id", customerH.Update)
 
 	// Transaction routes
 	admin.Post("/transactions", trxH.Create)
