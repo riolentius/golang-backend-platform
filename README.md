@@ -1,21 +1,19 @@
 # Production Go Backend Service
 
-This repository contains a Go-based backend service designed with
+This repository contains an **in-progress backend platform**, designed with
 production-first principles.
 
-The project includes:
-- a Golang backend service (API layer)
-- PostgreSQL database integration (AWS RDS)
-- secure infrastructure setup for development and production parity
-- database migrations and operational tooling
+Current Focus of the Project:
+- Core backend API (Golang) 
+- PostgreSQL database model and migrations
+- Operational readiness (logging, migrations, access patterns)
 
-Backend Service (WIP) :
-- Go + Fiber (planned) / routes folder
-- JWT auth (planned)
-- Health check endpoint
-- Docker compose for local dev (planned)
+Future scope:
+- Update Transactions to handle concurrent
+- Authentication and Authorization
+- Frontend Integration
 
-Infrastructure documentation is included to explain **how the backend is deployed and operated**, not as a standalone infra project.
+This section documents how the backend is operated and accessed in a real-world setup. It exists to demonstrate production thinking, not to present this project as an infra-only repository
 
 ---
 
@@ -33,7 +31,7 @@ Infrastructure documentation is included to explain **how the backend is deploye
 
 ---
 
-## 1. AWS Infrastructure Setup
+## 1. Infrastructure Setup and Operational Design (Context)
 
 ### 1.1 Create VPC
 
