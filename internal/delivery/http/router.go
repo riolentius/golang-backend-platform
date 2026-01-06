@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riolentius/cahaya-gading-backend/internal/config"
@@ -62,7 +63,7 @@ func RegisterRoutes(app *fiber.App, cfg config.Config, db *pgxpool.Pool) {
 	// Transactions wiring
 	trxRepo := postgres.NewTransactionRepo(db)
 	trxStore := postgres.NewTransactionStoreAdapter(trxRepo)
-	trxUC := trxuc.New(trxStore)
+	trxUC := txuc.New(trxStore)
 	trxH := trxhandler.New(trxUC)
 
 	// Customer wiring
@@ -80,7 +81,7 @@ func RegisterRoutes(app *fiber.App, cfg config.Config, db *pgxpool.Pool) {
 	// Transaction routes
 	admin.Post("/transactions", trxH.Create)
 	admin.Get("/transactions", trxH.List)
-	admin.Get("/transactions/:id", trxH.Get)
+	admin.Get("/transactions/:id", trxH.GetByID)
 	admin.Patch("/transactions/:id/status", trxH.UpdateStatus)
 
 	// Product routes

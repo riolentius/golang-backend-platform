@@ -29,6 +29,7 @@ type CreateInput struct {
 	CustomerID string         `json:"customerId"`
 	Notes      *string        `json:"notes"`
 	Items      []CreateItemIn `json:"items"`
+	Status     string         `json:"status"`
 }
 
 type CreateItemIn struct {
