@@ -19,8 +19,9 @@ func (a *ProductStoreAdapter) Create(
 	sku *string,
 	name string,
 	description *string,
+	stockOnHand int,
 ) (*productuc.Product, error) {
-	row, err := a.repo.Create(ctx, sku, name, description)
+	row, err := a.repo.Create(ctx, sku, name, description, stockOnHand)
 	if err != nil {
 		return nil, err
 	}
@@ -51,8 +52,9 @@ func (a *ProductStoreAdapter) Update(
 	name *string,
 	description *string,
 	isActive *bool,
+	stockOnHand *int,
 ) (*productuc.Product, error) {
-	row, err := a.repo.Update(ctx, id, sku, name, description, isActive)
+	row, err := a.repo.Update(ctx, id, sku, name, description, isActive, stockOnHand)
 	if err != nil {
 		return nil, err
 	}
@@ -61,13 +63,14 @@ func (a *ProductStoreAdapter) Update(
 
 func mapProductRowToUC(r *ProductRow) *productuc.Product {
 	return &productuc.Product{
-		ID:          r.ID,
-		SKU:         r.SKU,
-		Name:        r.Name,
-		Description: r.Description,
-		IsActive:    r.IsActive,
+		ID:            r.ID,
+		SKU:           r.SKU,
+		Name:          r.Name,
+		Description:   r.Description,
+		IsActive:      r.IsActive,
+		StockOnHand:   r.StockOnHand,
+		StockReserved: r.StockReserved,
 	}
 }
 
-// Compile-time check: ensures adapter matches usecase interface
 var _ productuc.ProductStore = (*ProductStoreAdapter)(nil)

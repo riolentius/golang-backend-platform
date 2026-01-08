@@ -54,7 +54,12 @@ func (a *TransactionStoreAdapter) Create(ctx context.Context, in trxuc.CreateInp
 			return nil, err
 		}
 
-		cur, unitStr, err := getLatestPriceAmount(ctx, tx, it.ProductID)
+		customerCategoryID, err := getCustomerCategoryID(ctx, tx, in.CustomerID)
+		if err != nil {
+			return nil, err
+		}
+
+		cur, unitStr, err := getEffectivePriceAmount(ctx, tx, it.ProductID, customerCategoryID)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return nil, trxuc.ErrPriceMissing
@@ -113,6 +118,44 @@ func (a *TransactionStoreAdapter) GetByID(ctx context.Context, id string) (*trxu
 func (a *TransactionStoreAdapter) UpdateStatus(ctx context.Context, id string, status string) (*trxuc.Transaction, error) {
 	// implement next (update status)
 	return nil, errors.New("not implemented")
+}
+
+func (a *TransactionStoreAdapter) ReserveStockForTx(ctx context.Context, transactionID string) error {
+	// implement next (update stock reservations)
+	return errors.New("not implemented")
+}
+
+func (a *TransactionStoreAdapter) CommitStockForTx(ctx context.Context, transactionID string) error {
+	// implement next (update stock levels)
+	return errors.New("not implemented")
+}
+
+func (a *TransactionStoreAdapter) ProductExists(ctx context.Context, productID string) (bool, error) {
+	return ensureProductExists(ctx, nil, productID) == nil, nil
+}
+
+func (a *TransactionStoreAdapter) GetAvailableStock(ctx context.Context, productID string) (int, error) {
+	// implement next (select stock level)
+	return 0, errors.New("not implemented")
+}
+
+func (a *TransactionStoreAdapter) GetReservedStockForTx(ctx context.Context, transactionID string) (map[string]int, error) {
+	// implement next (select reserved stock for transaction)
+	return nil, errors.New("not implemented")
+}
+
+func (a *TransactionStoreAdapter) GetCommittedStockForTx(ctx context.Context, transactionID string) (map[string]int, error) {
+	// implement next (select committed stock for transaction)
+	return nil, errors.New("not implemented")
+}
+
+func (a *TransactionStoreAdapter) ReleaseStockForTx(ctx context.Context, transactionID string) error {
+	// implement next (update stock reservations)
+	return errors.New("not implemented")
+}
+
+func (a *TransactionStoreAdapter) CustomerExists(ctx context.Context, customerID string) (bool, error) {
+	return ensureCustomerExists(ctx, nil, customerID) == nil, nil
 }
 
 func mapTrxRow(r *TransactionRow) *trxuc.Transaction {

@@ -28,7 +28,7 @@ func (h *Handler) List(c *fiber.Ctx) error {
 	limit := c.QueryInt("limit", 50)
 	offset := c.QueryInt("offset", 0)
 
-	out, err := h.uc.List(c.Context(), txuc.ListQuery{
+	out, err := h.uc.List(c.Context(), txuc.ListInput{
 		Limit:  limit,
 		Offset: offset,
 	})
@@ -69,7 +69,7 @@ func mapErr(err error) error {
 	switch err {
 	case txuc.ErrInvalidInput:
 		return fiber.NewError(fiber.StatusBadRequest, err.Error())
-	case txuc.ErrNotFound:
+	case txuc.ErrInvalidStatus:
 		return fiber.NewError(fiber.StatusNotFound, err.Error())
 	default:
 		return fiber.NewError(fiber.StatusInternalServerError, "internal error")

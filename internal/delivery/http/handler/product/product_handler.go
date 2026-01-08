@@ -20,10 +20,15 @@ func (h *Handler) Create(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid body"})
 	}
+
 	out, err := h.uc.Create(c.Context(), req)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		if err == productuc.ErrInvalidInput {
+			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.Status(500).JSON(fiber.Map{"error": "internal error"})
 	}
+
 	return c.Status(201).JSON(out)
 }
 
@@ -40,6 +45,7 @@ func (h *Handler) List(c *fiber.Ctx) error {
 
 func (h *Handler) Update(c *fiber.Ctx) error {
 	id := c.Params("id")
+
 	var req productuc.UpdateInput
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid body"})
@@ -47,7 +53,11 @@ func (h *Handler) Update(c *fiber.Ctx) error {
 
 	out, err := h.uc.Update(c.Context(), id, req)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		if err == productuc.ErrInvalidInput {
+			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.Status(500).JSON(fiber.Map{"error": "internal error"})
 	}
+
 	return c.JSON(out)
 }

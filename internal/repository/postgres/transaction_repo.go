@@ -82,17 +82,27 @@ func ensureProductExists(ctx context.Context, tx pgx.Tx, productID string) error
 	return nil
 }
 
-func getLatestPriceAmount(ctx context.Context, tx pgx.Tx, productID string) (currency string, amount string, err error) {
+func getEffectivePriceAmount(
+	ctx context.Context,
+	tx pgx.Tx,
+	productID string,
+	categoryID *string, // can be nil
+) (currency string, amount string, err error) {
 	const q = `
 SELECT currency, amount::text
 FROM product_prices
 WHERE product_id = $1::uuid
-  AND (valid_to IS NULL OR valid_to >= now())
+  AND (
+    ($2::uuid IS NOT NULL AND category_id = $2::uuid)
+    OR category_id IS NULL
+  )
   AND valid_from <= now()
-ORDER BY valid_from DESC, created_at DESC
+  AND (valid_to IS NULL OR now() < valid_to)
+ORDER BY (category_id IS NULL) ASC, valid_from DESC, created_at DESC
 LIMIT 1;
 `
-	if err := tx.QueryRow(ctx, q, productID).Scan(&currency, &amount); err != nil {
+	// note: if categoryID is nil, $2::uuid becomes NULL, query falls back to category_id IS NULL.
+	if err := tx.QueryRow(ctx, q, productID, categoryID).Scan(&currency, &amount); err != nil {
 		return "", "", err
 	}
 	return currency, amount, nil
@@ -146,4 +156,15 @@ RETURNING id::text, customer_id::text, status, currency, total_amount::text, not
 	return &out, nil
 }
 
-// For list/detail/status we’ll keep it in separate methods (implement after adapter skeleton if you want).
+func getCustomerCategoryID(ctx context.Context, tx pgx.Tx, customerID string) (*string, error) {
+	const q = `
+SELECT category_id::text
+FROM customers
+WHERE id = $1::uuid
+`
+	var cat *string
+	if err := tx.QueryRow(ctx, q, customerID).Scan(&cat); err != nil {
+		return nil, err
+	}
+	return cat, nil // can be nil (customer without category)
+}

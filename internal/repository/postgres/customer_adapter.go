@@ -63,8 +63,12 @@ func (a *CustomerStoreAdapter) Update(ctx context.Context, id string, in custome
 	if in.FirstName != nil {
 		rowIn.FirstName = *in.FirstName
 	}
+
+	if in.Email != nil {
+		rowIn.Email = *in.Email
+	}
+
 	rowIn.LastName = in.LastName
-	rowIn.Email = in.Email
 	rowIn.Phone = in.Phone
 	rowIn.IdentificationNumber = in.IdentificationNumber
 	rowIn.CategoryID = in.CategoryID
