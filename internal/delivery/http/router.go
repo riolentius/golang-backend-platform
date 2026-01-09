@@ -8,6 +8,7 @@ import (
 	"github.com/riolentius/cahaya-gading-backend/internal/config"
 	authhandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/auth"
 	customerhandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/customer"
+	payhandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/payment"
 	producthandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/product"
 	pricehandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/product_price"
 	trxhandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/transaction"
@@ -15,6 +16,7 @@ import (
 	"github.com/riolentius/cahaya-gading-backend/internal/repository/postgres"
 	authuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/auth"
 	customeruc "github.com/riolentius/cahaya-gading-backend/internal/usecase/customer"
+	payuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/payment"
 	productuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/product"
 	priceuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/product_price"
 	txuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/transaction"
@@ -71,6 +73,16 @@ func RegisterRoutes(app *fiber.App, cfg config.Config, db *pgxpool.Pool) {
 	customerStore := postgres.NewCustomerStoreAdapter(customerRepo)
 	customerUC := customeruc.New(customerStore)
 	customerH := customerhandler.New(customerUC)
+
+	// Payments wiring
+	paymentRepo := postgres.NewPaymentRepo(db)
+	paymentStore := postgres.NewPaymentStoreAdapter(paymentRepo)
+	paymentUC := payuc.New(paymentStore)
+	paymentH := payhandler.New(paymentUC)
+
+	// Endpoints
+	admin.Post("/transactions/:id/payments", paymentH.CreateForTransaction)
+	admin.Get("/transactions/:id/payments", paymentH.ListForTransaction)
 
 	// Customer routes
 	admin.Post("/customers", customerH.Create)
