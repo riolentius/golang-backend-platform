@@ -19,6 +19,11 @@ type TransactionRow struct {
 	UpdatedAt   interface{}
 }
 
+type TrxItemForFulfill struct {
+	ProductID string
+	Qty       int
+}
+
 type TransactionItemRow struct {
 	ID            string
 	TransactionID string
@@ -167,4 +172,82 @@ WHERE id = $1::uuid
 		return nil, err
 	}
 	return cat, nil // can be nil (customer without category)
+}
+
+func lockTransactionStatus(ctx context.Context, tx pgx.Tx, transactionID string) (string, error) {
+	const q = `
+SELECT status
+FROM transactions
+WHERE id = $1::uuid
+FOR UPDATE;
+`
+	var status string
+	if err := tx.QueryRow(ctx, q, transactionID).Scan(&status); err != nil {
+		return "", err
+	}
+	return status, nil
+}
+
+func listTransactionItems(ctx context.Context, tx pgx.Tx, transactionID string) ([]TrxItemForFulfill, error) {
+	const q = `
+SELECT product_id::text, qty
+FROM transaction_items
+WHERE transaction_id = $1::uuid;
+`
+	rows, err := tx.Query(ctx, q, transactionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]TrxItemForFulfill, 0, 10)
+	for rows.Next() {
+		var it TrxItemForFulfill
+		if err := rows.Scan(&it.ProductID, &it.Qty); err != nil {
+			return nil, err
+		}
+		out = append(out, it)
+	}
+	return out, rows.Err()
+}
+
+func lockProductStock(ctx context.Context, tx pgx.Tx, productID string) (onHand int, reserved int, err error) {
+	const q = `
+SELECT stock_on_hand, stock_reserved
+FROM products
+WHERE id = $1::uuid
+FOR UPDATE;
+`
+	if err := tx.QueryRow(ctx, q, productID).Scan(&onHand, &reserved); err != nil {
+		return 0, 0, err
+	}
+	return onHand, reserved, nil
+}
+
+func deductStockOnHand(ctx context.Context, tx pgx.Tx, productID string, qty int) error {
+	const q = `
+UPDATE products
+SET stock_on_hand = stock_on_hand - $2,
+    updated_at = now()
+WHERE id = $1::uuid;
+`
+	_, err := tx.Exec(ctx, q, productID, qty)
+	return err
+}
+
+func updateTransactionStatus(ctx context.Context, tx pgx.Tx, transactionID string, status string) (*TransactionRow, error) {
+	const q = `
+UPDATE transactions
+SET status = $2,
+    updated_at = now()
+WHERE id = $1::uuid
+RETURNING id::text, customer_id::text, status, currency, total_amount::text, notes, created_at, updated_at;
+`
+	row := tx.QueryRow(ctx, q, transactionID, status)
+
+	var out TransactionRow
+	if err := row.Scan(&out.ID, &out.CustomerID, &out.Status, &out.Currency, &out.TotalAmount, &out.Notes, &out.CreatedAt, &out.UpdatedAt); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }

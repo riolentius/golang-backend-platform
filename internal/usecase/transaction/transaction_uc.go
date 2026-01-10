@@ -7,13 +7,16 @@ import (
 )
 
 var (
-	ErrInvalidInput      = errors.New("invalid input")
-	ErrCustomerMissing   = errors.New("customer not found")
-	ErrProductMissing    = errors.New("product not found")
-	ErrPriceMissing      = errors.New("product price not found")
-	ErrInsufficientStock = errors.New("insufficient stock")
-	ErrInvalidStatus     = errors.New("invalid status")
-	ErrInvalidTransition = errors.New("invalid status transition")
+	ErrInvalidInput        = errors.New("invalid input")
+	ErrCustomerMissing     = errors.New("customer not found")
+	ErrProductMissing      = errors.New("product not found")
+	ErrPriceMissing        = errors.New("product price not found")
+	ErrInsufficientStock   = errors.New("insufficient stock")
+	ErrInvalidStatus       = errors.New("invalid status")
+	ErrInvalidTransition   = errors.New("invalid status transition")
+	ErrAlreadyFulfilled    = errors.New("transaction already fulfilled")
+	ErrTransactionMissing  = errors.New("transaction not found")
+	ErrTransactionCanceled = errors.New("transaction cancelled")
 )
 
 const (
@@ -42,6 +45,9 @@ type Store interface {
 	ReleaseStockForTx(ctx context.Context, txID string) error
 	CommitStockForTx(ctx context.Context, txID string) error
 	UpdateStatus(ctx context.Context, id string, status string) (*Transaction, error)
+	GetViewByID(ctx context.Context, id string) (*TransactionView, error)
+
+	Fulfill(ctx context.Context, id string) (*Transaction, error)
 }
 
 type Usecase struct {
@@ -208,4 +214,20 @@ func isValidTransition(from, to string) bool {
 	default:
 		return false
 	}
+}
+
+func (u *Usecase) Fulfill(ctx context.Context, id string) (*Transaction, error) {
+	if id == "" {
+		return nil, ErrInvalidInput
+	}
+
+	return u.store.Fulfill(ctx, id)
+
+}
+
+func (u *Usecase) GetViewByID(ctx context.Context, id string) (*TransactionView, error) {
+	if id == "" {
+		return nil, ErrInvalidInput
+	}
+	return u.store.GetViewByID(ctx, id)
 }

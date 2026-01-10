@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS payments (
   paid_at timestamptz NOT NULL DEFAULT now(),
 
 -- transfer metadata (optional)
+
 sender_name text,
   reference text,
 

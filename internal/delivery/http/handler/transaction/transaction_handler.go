@@ -1,6 +1,8 @@
 package transaction
 
 import (
+	"errors"
+
 	"github.com/gofiber/fiber/v2"
 
 	txuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/transaction"
@@ -74,4 +76,37 @@ func mapErr(err error) error {
 	default:
 		return fiber.NewError(fiber.StatusInternalServerError, "internal error")
 	}
+}
+
+func (h *Handler) Fulfill(c *fiber.Ctx) error {
+	id := c.Params("id")
+
+	out, err := h.uc.Fulfill(c.Context(), id)
+	if err != nil {
+		switch {
+		case errors.Is(err, txuc.ErrInvalidInput):
+			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		case errors.Is(err, txuc.ErrTransactionMissing):
+			return c.Status(404).JSON(fiber.Map{"error": err.Error()})
+		case errors.Is(err, txuc.ErrAlreadyFulfilled):
+			return c.Status(409).JSON(fiber.Map{"error": err.Error()})
+		case errors.Is(err, txuc.ErrTransactionCanceled):
+			return c.Status(409).JSON(fiber.Map{"error": err.Error()})
+		case errors.Is(err, txuc.ErrInsufficientStock):
+			return c.Status(409).JSON(fiber.Map{"error": err.Error()})
+		default:
+			return c.Status(500).JSON(fiber.Map{"error": "internal error"})
+		}
+	}
+
+	return c.JSON(out)
+}
+
+func (h *Handler) GetViewByID(c *fiber.Ctx) error {
+	id := c.Params("id")
+	out, err := h.uc.GetViewByID(c.Context(), id)
+	if err != nil {
+		return mapErr(err)
+	}
+	return c.JSON(out)
 }

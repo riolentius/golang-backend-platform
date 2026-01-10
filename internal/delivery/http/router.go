@@ -13,7 +13,13 @@ import (
 	pricehandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/product_price"
 	trxhandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/transaction"
 	"github.com/riolentius/cahaya-gading-backend/internal/delivery/middleware"
-	"github.com/riolentius/cahaya-gading-backend/internal/repository/postgres"
+	adminpg "github.com/riolentius/cahaya-gading-backend/internal/repository/postgres/admin"
+	postgres "github.com/riolentius/cahaya-gading-backend/internal/repository/postgres/admin"
+	customerpg "github.com/riolentius/cahaya-gading-backend/internal/repository/postgres/customer"
+	paypg "github.com/riolentius/cahaya-gading-backend/internal/repository/postgres/payment"
+	productpg "github.com/riolentius/cahaya-gading-backend/internal/repository/postgres/product"
+	pricepg "github.com/riolentius/cahaya-gading-backend/internal/repository/postgres/product_price"
+	trxpg "github.com/riolentius/cahaya-gading-backend/internal/repository/postgres/transaction"
 	authuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/auth"
 	customeruc "github.com/riolentius/cahaya-gading-backend/internal/usecase/customer"
 	payuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/payment"
@@ -30,7 +36,7 @@ func RegisterRoutes(app *fiber.App, cfg config.Config, db *pgxpool.Pool) {
 	api := app.Group("/api")
 
 	// Auth wiring
-	adminRepo := postgres.NewAdminRepo(db)
+	adminRepo := adminpg.NewAdminRepo(db)
 	adminFinder := &adminFinderAdapter{repo: adminRepo}
 	loginUC := authuc.NewAdminLoginUsecase(adminFinder, cfg.JWTSecret, cfg.JWTExpiresMinutes)
 	loginHandler := authhandler.NewAdminLoginHandler(loginUC)
@@ -51,38 +57,40 @@ func RegisterRoutes(app *fiber.App, cfg config.Config, db *pgxpool.Pool) {
 	})
 
 	// Products wiring
-	productRepo := postgres.NewProductRepo(db)
-	productStore := postgres.NewProductStoreAdapter(productRepo)
+	productRepo := productpg.NewProductRepo(db)
+	productStore := productpg.NewProductStoreAdapter(productRepo)
 	productUC := productuc.New(productStore)
 	productH := producthandler.New(productUC)
 
 	// Prices wiring
-	priceRepo := postgres.NewProductPriceRepo(db)
-	priceStore := postgres.NewProductPriceStoreAdapter(priceRepo)
+	priceRepo := pricepg.NewProductPriceRepo(db)
+	priceStore := pricepg.NewProductPriceStoreAdapter(priceRepo)
 	priceUC := priceuc.New(priceStore)
 	priceH := pricehandler.New(priceUC)
 
 	// Transactions wiring
-	trxRepo := postgres.NewTransactionRepo(db)
-	trxStore := postgres.NewTransactionStoreAdapter(trxRepo)
+	trxRepo := trxpg.NewTransactionRepo(db)
+	trxStore := trxpg.NewTransactionStoreAdapter(trxRepo)
 	trxUC := txuc.New(trxStore)
 	trxH := trxhandler.New(trxUC)
 
 	// Customer wiring
-	customerRepo := postgres.NewCustomerRepo(db)
-	customerStore := postgres.NewCustomerStoreAdapter(customerRepo)
+	customerRepo := customerpg.NewCustomerRepo(db)
+	customerStore := customerpg.NewCustomerStoreAdapter(customerRepo)
 	customerUC := customeruc.New(customerStore)
 	customerH := customerhandler.New(customerUC)
 
 	// Payments wiring
-	paymentRepo := postgres.NewPaymentRepo(db)
-	paymentStore := postgres.NewPaymentStoreAdapter(paymentRepo)
+	paymentRepo := paypg.NewPaymentRepo(db)
+	paymentStore := paypg.NewPaymentStoreAdapter(paymentRepo)
 	paymentUC := payuc.New(paymentStore)
 	paymentH := payhandler.New(paymentUC)
 
 	// Endpoints
+	admin.Get("/transactions/:id/view", trxH.GetViewByID)
 	admin.Post("/transactions/:id/payments", paymentH.CreateForTransaction)
 	admin.Get("/transactions/:id/payments", paymentH.ListForTransaction)
+	admin.Post("/transactions/:id/fulfill", trxH.Fulfill)
 
 	// Customer routes
 	admin.Post("/customers", customerH.Create)

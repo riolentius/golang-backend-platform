@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -156,6 +157,70 @@ func (a *TransactionStoreAdapter) ReleaseStockForTx(ctx context.Context, transac
 
 func (a *TransactionStoreAdapter) CustomerExists(ctx context.Context, customerID string) (bool, error) {
 	return ensureCustomerExists(ctx, nil, customerID) == nil, nil
+}
+
+func (a *TransactionStoreAdapter) Fulfill(ctx context.Context, transactionID string) (*trxuc.Transaction, error) {
+	tx, err := a.repo.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	// 1) lock transaction row and validate status
+	status, err := lockTransactionStatus(ctx, tx, transactionID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, trxuc.ErrTransactionMissing
+		}
+		return nil, err
+	}
+	if status == "fulfilled" {
+		return nil, trxuc.ErrAlreadyFulfilled
+	}
+	if status == "cancelled" {
+		return nil, trxuc.ErrTransactionCanceled
+	}
+
+	// 2) get items
+	items, err := listTransactionItems(ctx, tx, transactionID)
+	if err != nil {
+		return nil, err
+	}
+	if len(items) == 0 {
+		return nil, trxuc.ErrInvalidInput
+	}
+
+	// 3) commit stock (deduct) with row locks
+	for _, it := range items {
+		onHand, reserved, err := lockProductStock(ctx, tx, it.ProductID)
+		if err != nil {
+			return nil, err
+		}
+
+		available := onHand - reserved
+		if available < it.Qty {
+			return nil, fmt.Errorf("%w: product=%s available=%d requested=%d",
+				trxuc.ErrInsufficientStock, it.ProductID, available, it.Qty)
+		}
+
+		if err := deductStockOnHand(ctx, tx, it.ProductID, it.Qty); err != nil {
+			return nil, err
+		}
+	}
+
+	// 4) update transaction status
+	row, err := updateTransactionStatus(ctx, tx, transactionID, "fulfilled")
+	if err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+
+	out := mapTrxRow(row)
+	// optional: attach items if you want
+	return out, nil
 }
 
 func mapTrxRow(r *TransactionRow) *trxuc.Transaction {

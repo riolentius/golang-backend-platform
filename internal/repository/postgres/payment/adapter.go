@@ -2,7 +2,6 @@ package postgres
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -25,16 +24,12 @@ func (a *PaymentStoreAdapter) Create(ctx context.Context, in payuc.CreateInput) 
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	if err := ensureTransactionExists(ctx, tx, in.TransactionID); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+	// 1) lock transaction row (ensures transaction exists + prevents race)
+	total, currency, err := lockTransactionForPayment(ctx, tx, in.TransactionID)
+	if err != nil {
+		if pgx.ErrNoRows == err || isNoRows(err) {
 			return nil, nil, payuc.ErrTransactionMissing
 		}
-		return nil, nil, err
-	}
-
-	// transaction currency is source of truth
-	_, trxCurrency, err := getTransactionTotals(ctx, tx, in.TransactionID)
-	if err != nil {
 		return nil, nil, err
 	}
 
@@ -43,45 +38,45 @@ func (a *PaymentStoreAdapter) Create(ctx context.Context, in payuc.CreateInput) 
 		paidAt = *in.PaidAt
 	}
 
-	pRow, err := insertPayment(
-		ctx, tx,
-		in.TransactionID,
-		in.Method,
-		in.Amount,
-		trxCurrency,
-		paidAt,
-		in.SenderName,
-		in.Reference,
-		in.Note,
-	)
+	// 2) insert payment
+	row, err := insertPayment(ctx, tx, PaymentRow{
+		TransactionID: in.TransactionID,
+		Method:        in.Method,
+		Amount:        in.Amount,
+		Currency:      currency,
+		PaidAt:        paidAt,
+		SenderName:    in.SenderName,
+		Reference:     in.Reference,
+		Note:          in.Note,
+		Status:        "posted",
+	})
+	if err != nil {
+		// if transaction_id is invalid UUID, pg will error; usecase already checks non-empty
+		return nil, nil, err
+	}
+
+	// 3) recompute + update paid_amount + payment_status
+	stateRow, err := recomputeAndUpdateTransactionPaymentState(ctx, tx, in.TransactionID)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	paidSum, err := sumPostedPayments(ctx, tx, in.TransactionID)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	stateRow, err := updateTransactionPaymentState(ctx, tx, in.TransactionID, paidSum)
-	if err != nil {
-		return nil, nil, err
-	}
+	// total/currency already known; stateRow returns them too
+	_ = total
 
 	if err := tx.Commit(ctx); err != nil {
 		return nil, nil, err
 	}
 
-	outPayment := mapPaymentRowToUC(pRow)
-	outState := mapTxPaymentStateRowToUC(stateRow)
-	return outPayment, outState, nil
+	return mapPaymentRowToUC(row), mapStateRowToUC(stateRow), nil
 }
 
 func (a *PaymentStoreAdapter) ListByTransaction(ctx context.Context, transactionID string) ([]payuc.Payment, error) {
-	rows, err := listPaymentsByTransaction(ctx, a.repo.db, transactionID)
+	rows, err := a.repo.ListByTransaction(ctx, transactionID)
 	if err != nil {
 		return nil, err
 	}
+
 	out := make([]payuc.Payment, 0, len(rows))
 	for i := range rows {
 		out = append(out, *mapPaymentRowToUC(&rows[i]))
@@ -106,7 +101,7 @@ func mapPaymentRowToUC(r *PaymentRow) *payuc.Payment {
 	}
 }
 
-func mapTxPaymentStateRowToUC(r *TxPaymentStateRow) *payuc.TransactionPaymentState {
+func mapStateRowToUC(r *TransactionPaymentStateRow) *payuc.TransactionPaymentState {
 	return &payuc.TransactionPaymentState{
 		TransactionID: r.TransactionID,
 		PaidAmount:    r.PaidAmount,
