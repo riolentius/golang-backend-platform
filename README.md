@@ -1,278 +1,104 @@
-# Production Go Backend Service
+# Golang Backend Platform (Production-Oriented)
 
-This repository contains an **in-progress backend platform**, designed with
-production-first principles.
+This repository contains a **production-oriented backend platform** built with Golang + PostgreSQL
+design to model a real-world business workflow, such as:
+- Product & Price Management
+- Customer categorization
+- Transactions & fulfillment
+- Stock Control
+- Partial and Multi-stage payments
 
-Current Focus of the Project:
-- Core backend API (Golang) 
-- PostgreSQL database model and migrations
-- Operational readiness (logging, migrations, access patterns)
+This project is intentionally structured to demonstrate **clean architecture, transactional correctness, and operational readiness**, not just CRUD Endpoints.
 
-Future scope:
-- Update Transactions to handle concurrent
-- Authentication and Authorization
-- Frontend Integration
-
-This section documents how the backend is operated and accessed in a real-world setup. It exists to demonstrate production thinking, not to present this project as an infra-only repository
-
----
-
-## Architecture Overview
-
-- **VPC** (private network)
-- **Public Subnet**
-  - Bastion EC2 (SSM access)
-- **Private Subnet**
-  - RDS PostgreSQL
-- **Security Groups**
-  - Bastion → RDS access on port 5432
-- **Migration Tool**
-  - Goose (SQL-based migrations)
+This is an upgrade and re-architecture of a previous tenant-based system, rebuilt to support:
+- Strong domain boundaries
+- Financial correctness
+- Future frontend and integration work
 
 ---
 
-## 1. Infrastructure Setup and Operational Design (Context)
+## What This Backend Does
 
-### 1.1 Create VPC
+At a high level, the system supports the following real-world flow:
+1. **Create Customers**
+    - Customers and belong to pricing categories (e.g. Regular, Special or VIP)
+2. **Create products**
+    - Products have stock, prices, and active/inactive state
+3. **Define prices per category**
+    - One product can have different prices per customer category
+4. **Create transactions**
+    - Transactions contain multiple items
+    - Prices are resolved based on customer category
+5. **Fulfill transactions**
+    - Stock is deducted at fulfillment time (not at order creation)
+6. **Record payments**
+    - Support cash or transfer (later maybe will connected to payment gateway too)
+    - Supports partial payments
+    - Transaction payment state is recalculated automatically
 
-- CIDR: `10.0.0.0/16`
-- Enable:
-  - DNS Resolution
-  - DNS Hostnames
-
----
-
-### 1.2 Create Subnets
-
-Minimum required:
-
-- **Public Subnet** (for Bastion)
-- **Private Subnet(s)** (for RDS)
-
-Example:
-
-- Public: `10.0.1.0/24`
-- Private: `10.0.2.0/24`
+This mirrors how real shops and SMEs operate, especially in Indonesia.
 
 ---
+## Core Domain Concepts
 
-### 1.3 Internet Gateway
+**Products**
+  - Master data only
+  - Stock is tracked directly on the product
+  - Prices are stored separately for flexibility and history
 
-- Create Internet Gateway
-- Attach to VPC
-- Route Table (Public Subnet):
-  - `0.0.0.0/0 → Internet Gateway`
+**Customers**
+  - Can belong to a category
+  - Category determines effective price during transaction
 
----
+**Transactions**
+  - Created independently of payment
+  - Immutable line items
+  - Fulfillment controls stock deduction
+  - Status-driven lifecycle
 
-## 2. Security Groups
-
-### 2.1 Bastion Security Group (`<your-project-bastion>`)
-
-**Inbound**
-
-- SSH (22) from your IP  
-  _or_
-- No inbound rules if using SSM only
-
-**Outbound**
-
-- **All traffic → 0.0.0.0/0**
-
-> This is required so the bastion can reach RDS on port 5432.
+**Payments**
+  - Multiple payments per transaction
+  - Partial, full, or overpaid supported
+  - Transaction payment status updates automatically
 
 ---
+## Architecture Principles Used
 
-### 2.2 RDS Security Group (`<your-project-db>`)
-
-**Inbound**
-
-- PostgreSQL (5432)
-- Source: `<your-project-bastion>`
-
-**Outbound**
-
-- Default (allow all)
-
----
-
-## 3. Create RDS PostgreSQL
-
-- Engine: PostgreSQL
-- Instance class: `db.t4g.micro`
-- Public access: ❌ Disabled
-- Subnet group: Private subnets only
-- Security Group: `<your-project-db>`
-
-> Note: **DB instance identifier ≠ database name**
-
----
-
-## 4. Bastion Host Setup
-
-### 4.1 Create EC2 Instance
-
-- Instance type: `t3.micro` or `t4g.micro`
-- Subnet: Public
-- Security group: `<your-project-bastion>`
-- IAM Role: `AmazonSSMManagedInstanceCore`
-
----
-
-### 4.2 Access Bastion
-
-Preferred:
-
-- **AWS SSM Session Manager**
-
-Alternative:
-
-- SSH with key pair (dev only)
-
----
-
-## 5. Cost Notes (Important)
-
-Free Tier does **not** cover:
-
-- NAT Gateways
-- VPC Interface Endpoints
-
-For development:
-
-- Delete NAT Gateway
-- Delete VPC Interface Endpoints when not needed
-- Stop EC2 when idle
-
-Expected dev cost: **$0–$5 / month**
-
----
-
-## 6. Install PostgreSQL Client on Bastion
-
-```bash
-sudo dnf install -y postgresql15
+This project follows some best practice and Clean Architecture-style separation, adapted pragmatically for Go:
+```pgsql
+cmd/
+internal/
+  delivery/        --> HTTP handlers
+  usecase/         --> domain logic (Business rules)
+  repository/      --> Database access (postgresql)
+  config/          --> App Config
+  db/              --> DB bootstrap
+migrations/        --> Sql Migrations (Goose)
 ```
 
 ---
-
-## 7. Connect to RDS (Admin)
-
-```bash
-psql -h <RDS_ENDPOINT> -U postgres -d postgres -p 5432
-```
-
----
-
-## 8. Create Application Database User
-
-```sql
-CREATE USER <your_app> WITH PASSWORD 'STRONG_PASSWORD';
-
-GRANT CONNECT ON DATABASE "<your-project-db>" TO <your_app>;
-
-\c "<your-project-db>"
-
-GRANT USAGE, CREATE ON SCHEMA public TO your_app;
-
-ALTER DEFAULT PRIVILEGES IN SCHEMA public
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO your_app;
-
-ALTER DEFAULT PRIVILEGES IN SCHEMA public
-GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO your_app;
-```
+## API Coverage (Current)
+Implemented endpoints include:
+- Admin Auth (JWT)
+- Product CRUD
+- Product Price CRUD
+- Customer CRUD
+- Transaction creation & listing
+- Transaction fulfillment
+- Payment creation & listing
+This is sufficient to support a real frontend.
 
 ---
-
-## 9. Install Goose (Migration Tool)
-
-```bash
-curl -L https://github.com/pressly/goose/releases/download/v3.26.0/goose_linux_x86_64 -o goose
-chmod +x goose
-sudo mv goose /usr/local/bin/goose
-goose --version
-```
-
-Check architecture if needed:
-
-```bash
-uname -m
-```
-
----
-
-## 10. Environment Variable
-
-```bash
-set +H
-export DATABASE_URL='postgres://your_app:PASSWORD@<RDS_ENDPOINT>:5432/your-project-db?sslmode=require'
-```
-
-Verify:
-
-```bash
-psql "$DATABASE_URL" -c "select current_user, current_database();"
-```
-
----
-
-## 11. Migrations Directory
-
-Always work inside HOME directory:
-
-```bash
-mkdir -p ~/migrations
-```
-
-## 12. PostgreSQL Extensions (RDS Rule)
-
-Extensions must be installed using admin user:
-
-```bash
-psql -h <RDS_ENDPOINT> -U postgres -d your-project-db -p 5432 \
-  -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
-```
-
-## 13. Create Migration File (Safe Method)
-
-```bash
-tee ~/migrations/0001_init_schema.sql > /dev/null <<'SQL'
--- +goose Up
--- schema definitions
--- +goose Down
--- drop tables
-SQL
-```
-
-Avoid sudo cat > file
-Shell redirection happens before sudo.
-
-## 14. Run Migrations
-
-```bash
-goose -dir ~/migrations postgres "$DATABASE_URL" up
-```
-
-Verify
-
-```bash
-psql "$DATABASE_URL" -c "\dt"
-```
-
-## 15. Best Practices
-
-- Bastion is for bootstrap / emergency only
-- Long-term migrations should run via:
+## Project Status
+- Core backend domain will be still updated.
+- Ready for :
+  - Frontend integration
+  - Extended payment logic
   - CI/CD
-  - ECS task / Kubernetes Job
-- Keep migrations in the repository
-- Do not rely on manual bastion access in production
+  - Reporting
+ 
+---
+## Disclaimer
+This repository is not a tutorial project.
 
-## Final State
-
-- Private RDS PostgreSQL
-- Secure access via Bastion
-- App-level DB user
-- Goose migrations working
-- Cost under control
-- Ready for backend API development
+It is a learning-driven for production system, built to reflect how real systems behave under real constraints.
