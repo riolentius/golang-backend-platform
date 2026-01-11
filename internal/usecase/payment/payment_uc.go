@@ -51,7 +51,7 @@ func New(store Store) *Usecase {
 type CreateInput struct {
 	TransactionID string     `json:"-"`
 	Method        string     `json:"method"`
-	Amount        string     `json:"amount"` // accept string to avoid float issues
+	Amount        string     `json:"amount"`
 	SenderName    *string    `json:"senderName"`
 	Reference     *string    `json:"reference"`
 	Note          *string    `json:"note"`
@@ -71,10 +71,6 @@ func (u *Usecase) Create(ctx context.Context, in CreateInput) (*Payment, *Transa
 	if strings.TrimSpace(in.Amount) == "" {
 		return nil, nil, ErrInvalidInput
 	}
-	// simple numeric validation can be added later; DB will enforce numeric cast
-
-	// optional: if transfer, you probably want senderName/reference
-	// keep flexible for v1.
 
 	return u.store.Create(ctx, in)
 }

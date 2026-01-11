@@ -43,7 +43,7 @@ func (a *TransactionStoreAdapter) Create(ctx context.Context, in trxuc.CreateInp
 
 	var (
 		items      []trxuc.Item
-		totalCents float64 // we’ll do float64 only for v1; later switch to decimal library
+		totalCents float64
 		currency   string
 	)
 
@@ -219,7 +219,6 @@ func (a *TransactionStoreAdapter) Fulfill(ctx context.Context, transactionID str
 	}
 
 	out := mapTrxRow(row)
-	// optional: attach items if you want
 	return out, nil
 }
 

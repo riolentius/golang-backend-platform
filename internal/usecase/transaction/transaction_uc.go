@@ -27,20 +27,12 @@ const (
 )
 
 type Store interface {
-	// Validation helpers
 	CustomerExists(ctx context.Context, customerID string) (bool, error)
 	ProductExists(ctx context.Context, productID string) (bool, error)
-
-	// Inventory
-	// Available = on_hand - reserved (or computed any way you store)
 	GetAvailableStock(ctx context.Context, productID string) (int, error)
-
-	// Transaction persistence
 	Create(ctx context.Context, in CreateInput) (*Transaction, error)
 	List(ctx context.Context, in ListInput) ([]Transaction, error)
 	GetByID(ctx context.Context, id string) (*Transaction, error)
-
-	// Status + inventory operations (should be atomic inside DB tx in adapter)
 	ReserveStockForTx(ctx context.Context, txID string) error
 	ReleaseStockForTx(ctx context.Context, txID string) error
 	CommitStockForTx(ctx context.Context, txID string) error
@@ -85,7 +77,6 @@ func (u *Usecase) Create(ctx context.Context, in CreateInput) (*Transaction, err
 	}
 
 	// 3) Validate products exist + stock availability (only if reserving now)
-	// We check stock only when status is pending (reserve) or completed (commit).
 	if in.Status == StatusPending || in.Status == StatusCompleted {
 		for _, it := range in.Items {
 			ok, err := u.store.ProductExists(ctx, it.ProductID)
@@ -114,14 +105,13 @@ func (u *Usecase) Create(ctx context.Context, in CreateInput) (*Transaction, err
 	}
 
 	// 5) If created as pending -> reserve stock now
-	// If created as completed -> reserve + commit (or directly commit depending on your implementation)
+	// If created as completed -> reserve + commit
 	switch tx.Status {
 	case StatusPending:
 		if err := u.store.ReserveStockForTx(ctx, tx.ID); err != nil {
 			return nil, err
 		}
 	case StatusCompleted:
-		// safest: reserve then commit (adapter can implement in one DB tx)
 		if err := u.store.ReserveStockForTx(ctx, tx.ID); err != nil {
 			return nil, err
 		}
@@ -168,8 +158,6 @@ func (u *Usecase) UpdateStatus(ctx context.Context, id string, in UpdateStatusIn
 		return nil, ErrInvalidTransition
 	}
 
-	// Transition rules + inventory side effects
-	// IMPORTANT: in a real implementation, your adapter should do these atomically in 1 DB transaction.
 	switch {
 	case cur.Status == StatusDraft && in.Status == StatusPending:
 		// reserve
@@ -186,7 +174,6 @@ func (u *Usecase) UpdateStatus(ctx context.Context, id string, in UpdateStatusIn
 		if err := u.store.CommitStockForTx(ctx, id); err != nil {
 			return nil, err
 		}
-		// draft -> cancelled: no stock action
 	}
 
 	return u.store.UpdateStatus(ctx, id, in.Status)

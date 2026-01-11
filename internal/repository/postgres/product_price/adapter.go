@@ -87,5 +87,4 @@ func mapProductPriceRowToUC(r *ProductPriceRow) *priceuc.ProductPrice {
 	}
 }
 
-// Compile-time check (highly recommended)
 var _ priceuc.Store = (*ProductPriceStoreAdapter)(nil)

@@ -7,7 +7,7 @@ type ProductPrice struct {
 	ProductID  string     `json:"productId"`
 	CategoryID *string    `json:"categoryId,omitempty"`
 	Currency   string     `json:"currency"`
-	Amount     string     `json:"amount"` // keep as string to avoid float issues in JSON
+	Amount     string     `json:"amount"`
 	ValidFrom  time.Time  `json:"validFrom"`
 	ValidTo    *time.Time `json:"validTo,omitempty"`
 	CreatedAt  time.Time  `json:"createdAt"`

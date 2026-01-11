@@ -51,7 +51,6 @@ func (a *PaymentStoreAdapter) Create(ctx context.Context, in payuc.CreateInput) 
 		Status:        "posted",
 	})
 	if err != nil {
-		// if transaction_id is invalid UUID, pg will error; usecase already checks non-empty
 		return nil, nil, err
 	}
 
@@ -61,7 +60,6 @@ func (a *PaymentStoreAdapter) Create(ctx context.Context, in payuc.CreateInput) 
 		return nil, nil, err
 	}
 
-	// total/currency already known; stateRow returns them too
 	_ = total
 
 	if err := tx.Commit(ctx); err != nil {

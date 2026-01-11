@@ -15,7 +15,7 @@ type TransactionRow struct {
 	Currency    string
 	TotalAmount string
 	Notes       *string
-	CreatedAt   interface{} // we’ll scan into time.Time in adapter if you want; or set as time.Time directly
+	CreatedAt   interface{}
 	UpdatedAt   interface{}
 }
 
@@ -58,7 +58,6 @@ RETURNING id::text, customer_id::text, status, currency, total_amount::text, not
 	return &out, nil
 }
 
-// Helpers for transaction-based workflow:
 func (r *TransactionRepo) Begin(ctx context.Context) (pgx.Tx, error) {
 	return r.db.BeginTx(ctx, pgx.TxOptions{})
 }

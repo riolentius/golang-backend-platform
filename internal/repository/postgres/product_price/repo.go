@@ -12,7 +12,7 @@ type ProductPriceRow struct {
 	ProductID  string
 	CategoryID *string
 	Currency   string
-	Amount     string // keep as string for safety; convert later if you want decimal type
+	Amount     string
 	ValidFrom  time.Time
 	ValidTo    *time.Time
 	CreatedAt  time.Time

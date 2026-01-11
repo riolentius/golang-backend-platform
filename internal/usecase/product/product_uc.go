@@ -71,7 +71,7 @@ type UpdateInput struct {
 	Name        *string `json:"name"`
 	Description *string `json:"description"`
 	IsActive    *bool   `json:"isActive"`
-	StockOnHand *int    `json:"stockOnHand"` // admin-adjustable
+	StockOnHand *int    `json:"stockOnHand"`
 }
 
 func (u *Usecase) Update(ctx context.Context, id string, in UpdateInput) (*Product, error) {

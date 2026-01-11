@@ -1,0 +1,15 @@
+services:
+  postgres_test:
+    image: postgres:16
+    container_name: cahaya_pg_test
+    environment:
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: cahaya_test
+    ports:
+      - "55432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test -d cahaya_test"]
+      interval: 2s
+      timeout: 2s
+      retries: 20

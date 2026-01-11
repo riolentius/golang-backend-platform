@@ -45,7 +45,6 @@ func (r *PaymentRepo) Begin(ctx context.Context) (pgx.Tx, error) {
 }
 
 func lockTransactionForPayment(ctx context.Context, tx pgx.Tx, transactionID string) (totalAmount string, currency string, err error) {
-	// Lock the transaction row to avoid race conditions on paid_amount/payment_status
 	const q = `
 SELECT total_amount::text, currency
 FROM transactions
@@ -210,7 +209,6 @@ ORDER BY paid_at DESC, created_at DESC;
 	return out, rows.Err()
 }
 
-// Helper you’ll use in adapter to classify “missing transaction”
 func isNoRows(err error) bool {
 	return errors.Is(err, pgx.ErrNoRows)
 }
