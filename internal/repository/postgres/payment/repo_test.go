@@ -34,7 +34,7 @@ func TestPayment_CreateAndList_UpdatesTransactionState(t *testing.T) {
 
 	// create transaction (1 item qty 2 => 10,000)
 	trxRepo := trxrepo.NewTransactionRepo(db)
-	trxStore := trxrepo.NewTransactionStoreAdapter(trxRepo)
+	trxStore := trxrepo.NewTransactionStoreAdapter(trxRepo, db)
 
 	trx, err := trxStore.Create(ctx, trxuc.CreateInput{
 		CustomerID: custID,

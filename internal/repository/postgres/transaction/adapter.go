@@ -3,21 +3,25 @@ package postgres
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	trxuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/transaction"
 )
 
 type TransactionStoreAdapter struct {
 	repo *TransactionRepo
+	db   *pgxpool.Pool
 }
 
-func NewTransactionStoreAdapter(repo *TransactionRepo) *TransactionStoreAdapter {
-	return &TransactionStoreAdapter{repo: repo}
+func NewTransactionStoreAdapter(repo *TransactionRepo, db *pgxpool.Pool) *TransactionStoreAdapter {
+	return &TransactionStoreAdapter{
+		repo: repo,
+		db:   db,
+	}
 }
 
 func (a *TransactionStoreAdapter) Create(ctx context.Context, in trxuc.CreateInput) (*trxuc.Transaction, error) {
@@ -47,16 +51,16 @@ func (a *TransactionStoreAdapter) Create(ctx context.Context, in trxuc.CreateInp
 		currency   string
 	)
 
+	customerCategoryID, err := getCustomerCategoryID(ctx, tx, in.CustomerID)
+	if err != nil {
+		return nil, err
+	}
+
 	for _, it := range in.Items {
 		if err := ensureProductExists(ctx, tx, it.ProductID); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return nil, trxuc.ErrProductMissing
 			}
-			return nil, err
-		}
-
-		customerCategoryID, err := getCustomerCategoryID(ctx, tx, in.CustomerID)
-		if err != nil {
 			return nil, err
 		}
 
@@ -121,23 +125,29 @@ func (a *TransactionStoreAdapter) UpdateStatus(ctx context.Context, id string, s
 	return nil, errors.New("not implemented")
 }
 
-func (a *TransactionStoreAdapter) ReserveStockForTx(ctx context.Context, transactionID string) error {
-	// implement next (update stock reservations)
-	return errors.New("not implemented")
-}
-
-func (a *TransactionStoreAdapter) CommitStockForTx(ctx context.Context, transactionID string) error {
-	// implement next (update stock levels)
-	return errors.New("not implemented")
-}
-
 func (a *TransactionStoreAdapter) ProductExists(ctx context.Context, productID string) (bool, error) {
-	return ensureProductExists(ctx, nil, productID) == nil, nil
+	err := ensureProductExists(ctx, a.db, productID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 func (a *TransactionStoreAdapter) GetAvailableStock(ctx context.Context, productID string) (int, error) {
-	// implement next (select stock level)
-	return 0, errors.New("not implemented")
+	const q = `
+SELECT stock_on_hand - stock_reserved
+FROM products
+WHERE id = $1::uuid;
+`
+	var avail int
+	if err := a.db.QueryRow(ctx, q, productID).Scan(&avail); err != nil {
+		return 0, err
+	}
+	return avail, nil
+}
+
+func (a *TransactionStoreAdapter) GetStockRule(ctx context.Context, productID string) (string, float64, error) {
+	return getStockRule(ctx, a.db, productID)
 }
 
 func (a *TransactionStoreAdapter) GetReservedStockForTx(ctx context.Context, transactionID string) (map[string]int, error) {
@@ -150,13 +160,12 @@ func (a *TransactionStoreAdapter) GetCommittedStockForTx(ctx context.Context, tr
 	return nil, errors.New("not implemented")
 }
 
-func (a *TransactionStoreAdapter) ReleaseStockForTx(ctx context.Context, transactionID string) error {
-	// implement next (update stock reservations)
-	return errors.New("not implemented")
-}
-
 func (a *TransactionStoreAdapter) CustomerExists(ctx context.Context, customerID string) (bool, error) {
-	return ensureCustomerExists(ctx, nil, customerID) == nil, nil
+	err := ensureCustomerExists(ctx, a.db, customerID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 func (a *TransactionStoreAdapter) Fulfill(ctx context.Context, transactionID string) (*trxuc.Transaction, error) {
@@ -166,7 +175,6 @@ func (a *TransactionStoreAdapter) Fulfill(ctx context.Context, transactionID str
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	// 1) lock transaction row and validate status
 	status, err := lockTransactionStatus(ctx, tx, transactionID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -174,42 +182,22 @@ func (a *TransactionStoreAdapter) Fulfill(ctx context.Context, transactionID str
 		}
 		return nil, err
 	}
-	if status == "fulfilled" {
+
+	if status == trxuc.StatusCompleted {
 		return nil, trxuc.ErrAlreadyFulfilled
 	}
-	if status == "cancelled" {
+	if status == trxuc.StatusCancelled {
 		return nil, trxuc.ErrTransactionCanceled
 	}
+	if status != trxuc.StatusPending {
+		return nil, trxuc.ErrInvalidTransition
+	}
 
-	// 2) get items
-	items, err := listTransactionItems(ctx, tx, transactionID)
-	if err != nil {
+	if err := commitStockForTx(ctx, tx, transactionID); err != nil {
 		return nil, err
 	}
-	if len(items) == 0 {
-		return nil, trxuc.ErrInvalidInput
-	}
 
-	// 3) commit stock (deduct) with row locks
-	for _, it := range items {
-		onHand, reserved, err := lockProductStock(ctx, tx, it.ProductID)
-		if err != nil {
-			return nil, err
-		}
-
-		available := onHand - reserved
-		if available < it.Qty {
-			return nil, fmt.Errorf("%w: product=%s available=%d requested=%d",
-				trxuc.ErrInsufficientStock, it.ProductID, available, it.Qty)
-		}
-
-		if err := deductStockOnHand(ctx, tx, it.ProductID, it.Qty); err != nil {
-			return nil, err
-		}
-	}
-
-	// 4) update transaction status
-	row, err := updateTransactionStatus(ctx, tx, transactionID, "fulfilled")
+	row, err := updateTransactionStatus(ctx, tx, transactionID, trxuc.StatusCompleted)
 	if err != nil {
 		return nil, err
 	}
@@ -218,8 +206,7 @@ func (a *TransactionStoreAdapter) Fulfill(ctx context.Context, transactionID str
 		return nil, err
 	}
 
-	out := mapTrxRow(row)
-	return out, nil
+	return mapTrxRow(row), nil
 }
 
 func mapTrxRow(r *TransactionRow) *trxuc.Transaction {
@@ -259,6 +246,75 @@ func mustTime(v any) time.Time {
 func formatMoney(v float64) string {
 	// numeric(18,2) formatting
 	return strconv.FormatFloat(v, 'f', 2, 64)
+}
+
+func (a *TransactionStoreAdapter) ReserveStockForTx(ctx context.Context, transactionID string) error {
+	tx, err := a.repo.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	status, err := lockTransactionStatus(ctx, tx, transactionID)
+	if err != nil {
+		return err
+	}
+	// reserve happens only for draft -> pending transition
+	if status != trxuc.StatusDraft {
+		return trxuc.ErrInvalidTransition
+	}
+
+	if err := reserveStockForTx(ctx, tx, transactionID); err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
+}
+
+func (a *TransactionStoreAdapter) ReleaseStockForTx(ctx context.Context, transactionID string) error {
+	tx, err := a.repo.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	status, err := lockTransactionStatus(ctx, tx, transactionID)
+	if err != nil {
+		return err
+	}
+	// release happens only for pending -> cancelled transition
+	if status != trxuc.StatusPending {
+		return trxuc.ErrInvalidTransition
+	}
+
+	if err := releaseStockForTx(ctx, tx, transactionID); err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
+}
+
+func (a *TransactionStoreAdapter) CommitStockForTx(ctx context.Context, transactionID string) error {
+	tx, err := a.repo.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	status, err := lockTransactionStatus(ctx, tx, transactionID)
+	if err != nil {
+		return err
+	}
+	// commit happens only for pending -> completed transition
+	if status != trxuc.StatusPending {
+		return trxuc.ErrInvalidTransition
+	}
+
+	if err := commitStockForTx(ctx, tx, transactionID); err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
 }
 
 // Compile-time check

@@ -14,7 +14,6 @@ import (
 	trxhandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/transaction"
 	"github.com/riolentius/cahaya-gading-backend/internal/delivery/middleware"
 	adminpg "github.com/riolentius/cahaya-gading-backend/internal/repository/postgres/admin"
-	postgres "github.com/riolentius/cahaya-gading-backend/internal/repository/postgres/admin"
 	customerpg "github.com/riolentius/cahaya-gading-backend/internal/repository/postgres/customer"
 	paypg "github.com/riolentius/cahaya-gading-backend/internal/repository/postgres/payment"
 	productpg "github.com/riolentius/cahaya-gading-backend/internal/repository/postgres/product"
@@ -70,7 +69,7 @@ func RegisterRoutes(app *fiber.App, cfg config.Config, db *pgxpool.Pool) {
 
 	// Transactions wiring
 	trxRepo := trxpg.NewTransactionRepo(db)
-	trxStore := trxpg.NewTransactionStoreAdapter(trxRepo)
+	trxStore := trxpg.NewTransactionStoreAdapter(trxRepo, db)
 	trxUC := txuc.New(trxStore)
 	trxH := trxhandler.New(trxUC)
 
@@ -116,7 +115,7 @@ func RegisterRoutes(app *fiber.App, cfg config.Config, db *pgxpool.Pool) {
 }
 
 type adminFinderAdapter struct {
-	repo *postgres.AdminRepo
+	repo *adminpg.AdminRepo
 }
 
 func (a *adminFinderAdapter) FindByEmail(ctx context.Context, email string) (*authuc.Admin, error) {

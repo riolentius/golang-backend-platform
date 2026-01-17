@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 )
 
 var (
@@ -17,25 +18,36 @@ var (
 	ErrAlreadyFulfilled    = errors.New("transaction already fulfilled")
 	ErrTransactionMissing  = errors.New("transaction not found")
 	ErrTransactionCanceled = errors.New("transaction cancelled")
+	ErrInvalidPackSize     = errors.New("invalid pack size")
 )
 
 const (
-	StatusDraft     = "draft"     // created but not submitted
-	StatusPending   = "pending"   // submitted (reserve stock)
-	StatusCompleted = "completed" // paid/finished (commit stock)
-	StatusCancelled = "cancelled" // cancelled (release reservation)
+	StatusDraft     = "draft"
+	StatusPending   = "pending"
+	StatusCompleted = "completed"
+	StatusCancelled = "cancelled"
 )
 
 type Store interface {
 	CustomerExists(ctx context.Context, customerID string) (bool, error)
 	ProductExists(ctx context.Context, productID string) (bool, error)
-	GetAvailableStock(ctx context.Context, productID string) (int, error)
+
+	// NEW: resolve inventory product + conversion
+	// stockProductID: where stock is stored (base_product_id if exists, else the product itself)
+	// packSize: how many base units consumed by qty=1 of productID (default 1)
+	GetStockRule(ctx context.Context, productID string) (stockProductID string, packSize float64, err error)
+
+	// IMPORTANT: available stock is in BASE UNITS of the stockProductID
+	GetAvailableStock(ctx context.Context, stockProductID string) (int, error)
+
 	Create(ctx context.Context, in CreateInput) (*Transaction, error)
 	List(ctx context.Context, in ListInput) ([]Transaction, error)
 	GetByID(ctx context.Context, id string) (*Transaction, error)
+
 	ReserveStockForTx(ctx context.Context, txID string) error
 	ReleaseStockForTx(ctx context.Context, txID string) error
 	CommitStockForTx(ctx context.Context, txID string) error
+
 	UpdateStatus(ctx context.Context, id string, status string) (*Transaction, error)
 	GetViewByID(ctx context.Context, id string) (*TransactionView, error)
 
@@ -61,7 +73,7 @@ func (u *Usecase) Create(ctx context.Context, in CreateInput) (*Transaction, err
 		}
 	}
 	if in.Status == "" {
-		in.Status = StatusDraft // default
+		in.Status = StatusDraft
 	}
 	if !isValidStatus(in.Status) {
 		return nil, ErrInvalidStatus
@@ -87,13 +99,30 @@ func (u *Usecase) Create(ctx context.Context, in CreateInput) (*Transaction, err
 				return nil, fmt.Errorf("%w: %s", ErrProductMissing, it.ProductID)
 			}
 
-			avail, err := u.store.GetAvailableStock(ctx, it.ProductID)
+			stockProductID, packSize, err := u.store.GetStockRule(ctx, it.ProductID)
 			if err != nil {
 				return nil, err
 			}
-			if avail < it.Qty {
-				return nil, fmt.Errorf("%w: product=%s available=%d requested=%d",
-					ErrInsufficientStock, it.ProductID, avail, it.Qty)
+			if stockProductID == "" || packSize <= 0 {
+				return nil, ErrInvalidPackSize
+			}
+
+			// v1 rule: packSize must be a whole number (boxes/packs)
+			if math.Trunc(packSize) != packSize {
+				return nil, fmt.Errorf("%w: product=%s pack_size=%v", ErrInvalidPackSize, it.ProductID, packSize)
+			}
+
+			requiredBaseUnits := int(packSize) * it.Qty
+
+			avail, err := u.store.GetAvailableStock(ctx, stockProductID)
+			if err != nil {
+				return nil, err
+			}
+			if avail < requiredBaseUnits {
+				return nil, fmt.Errorf(
+					"%w: product=%s stock_product=%s available=%d required=%d",
+					ErrInsufficientStock, it.ProductID, stockProductID, avail, requiredBaseUnits,
+				)
 			}
 		}
 	}
@@ -148,7 +177,6 @@ func (u *Usecase) UpdateStatus(ctx context.Context, id string, in UpdateStatusIn
 		return nil, ErrInvalidStatus
 	}
 
-	// Load current state so we can enforce transitions
 	cur, err := u.store.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -160,23 +188,34 @@ func (u *Usecase) UpdateStatus(ctx context.Context, id string, in UpdateStatusIn
 
 	switch {
 	case cur.Status == StatusDraft && in.Status == StatusPending:
-		// reserve
 		if err := u.store.ReserveStockForTx(ctx, id); err != nil {
 			return nil, err
 		}
 	case cur.Status == StatusPending && in.Status == StatusCancelled:
-		// release reservation
 		if err := u.store.ReleaseStockForTx(ctx, id); err != nil {
 			return nil, err
 		}
 	case cur.Status == StatusPending && in.Status == StatusCompleted:
-		// commit: reduce on_hand and reserved
 		if err := u.store.CommitStockForTx(ctx, id); err != nil {
 			return nil, err
 		}
 	}
 
 	return u.store.UpdateStatus(ctx, id, in.Status)
+}
+
+func (u *Usecase) Fulfill(ctx context.Context, id string) (*Transaction, error) {
+	if id == "" {
+		return nil, ErrInvalidInput
+	}
+	return u.store.Fulfill(ctx, id)
+}
+
+func (u *Usecase) GetViewByID(ctx context.Context, id string) (*TransactionView, error) {
+	if id == "" {
+		return nil, ErrInvalidInput
+	}
+	return u.store.GetViewByID(ctx, id)
 }
 
 func isValidStatus(s string) bool {
@@ -194,27 +233,9 @@ func isValidTransition(from, to string) bool {
 		return to == StatusPending || to == StatusCancelled
 	case StatusPending:
 		return to == StatusCompleted || to == StatusCancelled
-	case StatusCompleted:
-		return false
-	case StatusCancelled:
+	case StatusCompleted, StatusCancelled:
 		return false
 	default:
 		return false
 	}
-}
-
-func (u *Usecase) Fulfill(ctx context.Context, id string) (*Transaction, error) {
-	if id == "" {
-		return nil, ErrInvalidInput
-	}
-
-	return u.store.Fulfill(ctx, id)
-
-}
-
-func (u *Usecase) GetViewByID(ctx context.Context, id string) (*TransactionView, error) {
-	if id == "" {
-		return nil, ErrInvalidInput
-	}
-	return u.store.GetViewByID(ctx, id)
 }

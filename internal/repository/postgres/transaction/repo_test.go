@@ -86,7 +86,7 @@ func seedCustomerProductPrice(t *testing.T, pool *pgxpool.Pool) (customerID stri
 func TestTransaction_Create_OK(t *testing.T) {
 	pool := mustTestPool(t)
 	repo := NewTransactionRepo(pool)
-	store := NewTransactionStoreAdapter(repo)
+	store := NewTransactionStoreAdapter(repo, pool)
 	uc := txuc.New(store)
 
 	customerID, productID := seedCustomerProductPrice(t, pool)
@@ -117,7 +117,7 @@ func TestTransaction_Create_OK(t *testing.T) {
 func TestTransaction_Create_CustomerMissing(t *testing.T) {
 	pool := mustTestPool(t)
 	repo := NewTransactionRepo(pool)
-	store := NewTransactionStoreAdapter(repo)
+	store := NewTransactionStoreAdapter(repo, pool)
 	uc := txuc.New(store)
 
 	_, err := uc.Create(context.Background(), txuc.CreateInput{
@@ -138,7 +138,7 @@ func TestTransaction_Create_CustomerMissing(t *testing.T) {
 func TestTransaction_StatusAndStockFlow(t *testing.T) {
 	pool := mustTestPool(t)
 	repo := NewTransactionRepo(pool)
-	store := NewTransactionStoreAdapter(repo)
+	store := NewTransactionStoreAdapter(repo, pool)
 	uc := txuc.New(store)
 
 	customerID, productID := seedCustomerProductPrice(t, pool)
@@ -190,7 +190,7 @@ func TestTransaction_StatusAndStockFlow(t *testing.T) {
 func TestTransaction_InsufficientStock(t *testing.T) {
 	pool := mustTestPool(t)
 	repo := NewTransactionRepo(pool)
-	store := NewTransactionStoreAdapter(repo)
+	store := NewTransactionStoreAdapter(repo, pool)
 	uc := txuc.New(store)
 
 	customerID, productID := seedCustomerProductPrice(t, pool)

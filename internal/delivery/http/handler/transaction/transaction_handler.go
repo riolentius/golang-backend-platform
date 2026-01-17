@@ -68,10 +68,16 @@ func writeOne(c *fiber.Ctx, out *txuc.Transaction, err error, okStatus int) erro
 }
 
 func mapErr(err error) error {
-	switch err {
-	case txuc.ErrInvalidInput:
+	switch {
+	case errors.Is(err, txuc.ErrInvalidInput):
 		return fiber.NewError(fiber.StatusBadRequest, err.Error())
-	case txuc.ErrInvalidStatus:
+	case errors.Is(err, txuc.ErrInvalidStatus):
+		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+	case errors.Is(err, txuc.ErrInvalidTransition):
+		return fiber.NewError(fiber.StatusConflict, err.Error())
+	case errors.Is(err, txuc.ErrInsufficientStock):
+		return fiber.NewError(fiber.StatusConflict, err.Error())
+	case errors.Is(err, txuc.ErrTransactionMissing):
 		return fiber.NewError(fiber.StatusNotFound, err.Error())
 	default:
 		return fiber.NewError(fiber.StatusInternalServerError, "internal error")

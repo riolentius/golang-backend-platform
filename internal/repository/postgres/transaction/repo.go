@@ -3,6 +3,9 @@ package postgres
 import (
 	"context"
 	"errors"
+	"fmt"
+	"math"
+	"strconv"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -24,6 +27,11 @@ type TrxItemForFulfill struct {
 	Qty       int
 }
 
+type TrxStockMove struct {
+	StockProductID string
+	BaseQty        int
+}
+
 type TransactionItemRow struct {
 	ID            string
 	TransactionID string
@@ -41,6 +49,10 @@ type TransactionRepo struct {
 
 func NewTransactionRepo(db *pgxpool.Pool) *TransactionRepo {
 	return &TransactionRepo{db: db}
+}
+
+type queryer interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
 func (r *TransactionRepo) Create(ctx context.Context, customerID string, notes *string) (*TransactionRow, error) {
@@ -62,10 +74,10 @@ func (r *TransactionRepo) Begin(ctx context.Context) (pgx.Tx, error) {
 	return r.db.BeginTx(ctx, pgx.TxOptions{})
 }
 
-func ensureCustomerExists(ctx context.Context, tx pgx.Tx, customerID string) error {
-	const q = `SELECT 1 FROM customers WHERE id = $1::uuid`
+func ensureCustomerExists(ctx context.Context, q queryer, customerID string) error {
+	const sql = `SELECT 1 FROM customers WHERE id = $1::uuid`
 	var one int
-	if err := tx.QueryRow(ctx, q, customerID).Scan(&one); err != nil {
+	if err := q.QueryRow(ctx, sql, customerID).Scan(&one); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
@@ -74,10 +86,10 @@ func ensureCustomerExists(ctx context.Context, tx pgx.Tx, customerID string) err
 	return nil
 }
 
-func ensureProductExists(ctx context.Context, tx pgx.Tx, productID string) error {
-	const q = `SELECT 1 FROM products WHERE id = $1::uuid`
+func ensureProductExists(ctx context.Context, q queryer, productID string) error {
+	const sql = `SELECT 1 FROM products WHERE id = $1::uuid`
 	var one int
-	if err := tx.QueryRow(ctx, q, productID).Scan(&one); err != nil {
+	if err := q.QueryRow(ctx, sql, productID).Scan(&one); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
@@ -187,11 +199,14 @@ FOR UPDATE;
 	return status, nil
 }
 
-func listTransactionItems(ctx context.Context, tx pgx.Tx, transactionID string) ([]TrxItemForFulfill, error) {
+func listTransactionStockMoves(ctx context.Context, tx pgx.Tx, transactionID string) ([]TrxStockMove, error) {
 	const q = `
-SELECT product_id::text, qty
-FROM transaction_items
-WHERE transaction_id = $1::uuid;
+SELECT
+  COALESCE(p.base_product_id, p.id)::text AS stock_product_id,
+  (ti.qty * p.pack_size)::numeric::text AS base_qty
+FROM transaction_items ti
+JOIN products p ON p.id = ti.product_id
+WHERE ti.transaction_id = $1::uuid;
 `
 	rows, err := tx.Query(ctx, q, transactionID)
 	if err != nil {
@@ -199,13 +214,26 @@ WHERE transaction_id = $1::uuid;
 	}
 	defer rows.Close()
 
-	out := make([]TrxItemForFulfill, 0, 10)
+	out := make([]TrxStockMove, 0, 10)
 	for rows.Next() {
-		var it TrxItemForFulfill
-		if err := rows.Scan(&it.ProductID, &it.Qty); err != nil {
+		var m TrxStockMove
+		var baseQtyStr string
+
+		if err := rows.Scan(&m.StockProductID, &baseQtyStr); err != nil {
 			return nil, err
 		}
-		out = append(out, it)
+
+		// v1: must be integer (packaging)
+		f, err := strconv.ParseFloat(baseQtyStr, 64)
+		if err != nil {
+			return nil, err
+		}
+		if f != math.Trunc(f) {
+			return nil, errors.New("non-integer base_qty not supported in v1")
+		}
+		m.BaseQty = int(f)
+
+		out = append(out, m)
 	}
 	return out, rows.Err()
 }
@@ -249,4 +277,162 @@ RETURNING id::text, customer_id::text, status, currency, total_amount::text, not
 		return nil, err
 	}
 	return &out, nil
+}
+
+func getStockRule(ctx context.Context, q queryer, productID string) (stockProductID string, packSize float64, err error) {
+	const sql = `
+SELECT
+  COALESCE(base_product_id, id)::text AS stock_product_id,
+  pack_size::text
+FROM products
+WHERE id = $1::uuid;
+`
+	var packStr string
+	if err := q.QueryRow(ctx, sql, productID).Scan(&stockProductID, &packStr); err != nil {
+		return "", 0, err
+	}
+
+	ps, err := strconv.ParseFloat(packStr, 64)
+	if err != nil {
+		return "", 0, err
+	}
+	if ps <= 0 {
+		return "", 0, errors.New("invalid pack_size")
+	}
+	return stockProductID, ps, nil
+}
+
+func reserveStock(ctx context.Context, tx pgx.Tx, productID string, qty int) error {
+	const q = `
+UPDATE products
+SET stock_reserved = stock_reserved + $2,
+    updated_at = now()
+WHERE id = $1::uuid;
+`
+	_, err := tx.Exec(ctx, q, productID, qty)
+	return err
+}
+
+func releaseReservedStock(ctx context.Context, tx pgx.Tx, productID string, qty int) error {
+	const q = `
+UPDATE products
+SET stock_reserved = stock_reserved - $2,
+    updated_at = now()
+WHERE id = $1::uuid
+  AND stock_reserved >= $2;
+`
+	ct, err := tx.Exec(ctx, q, productID, qty)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
+		return fmt.Errorf("reserved stock insufficient: stock_product=%s required=%d", productID, qty)
+	}
+	return nil
+}
+
+func commitStockForTx(ctx context.Context, tx pgx.Tx, transactionID string) error {
+	moves, err := listTransactionStockMoves(ctx, tx, transactionID)
+	if err != nil {
+		return err
+	}
+	if len(moves) == 0 {
+		return pgx.ErrNoRows
+	}
+
+	need := map[string]int{}
+	for _, m := range moves {
+		need[m.StockProductID] += m.BaseQty
+	}
+
+	for stockID, qty := range need {
+		onHand, reserved, err := lockProductStock(ctx, tx, stockID)
+		if err != nil {
+			return err
+		}
+
+		// since we are committing reserved stock, ensure reservation exists
+		if reserved < qty {
+			return fmt.Errorf("reserved stock insufficient: stock_product=%s reserved=%d required=%d", stockID, reserved, qty)
+		}
+		if onHand < qty {
+			return fmt.Errorf("on_hand insufficient: stock_product=%s on_hand=%d required=%d", stockID, onHand, qty)
+		}
+
+		// commit: on_hand -= qty, reserved -= qty
+		const q = `
+UPDATE products
+SET stock_on_hand = stock_on_hand - $2,
+    stock_reserved = stock_reserved - $2,
+    updated_at = now()
+WHERE id = $1::uuid;
+`
+		if _, err := tx.Exec(ctx, q, stockID, qty); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func reserveStockForTx(ctx context.Context, tx pgx.Tx, transactionID string) error {
+	moves, err := listTransactionStockMoves(ctx, tx, transactionID)
+	if err != nil {
+		return err
+	}
+	if len(moves) == 0 {
+		return pgx.ErrNoRows
+	}
+
+	need := map[string]int{}
+	for _, m := range moves {
+		need[m.StockProductID] += m.BaseQty
+	}
+
+	for stockID, qty := range need {
+		onHand, reserved, err := lockProductStock(ctx, tx, stockID)
+		if err != nil {
+			return err
+		}
+
+		available := onHand - reserved
+		if available < qty {
+			return fmt.Errorf("insufficient stock: stock_product=%s available=%d required=%d", stockID, available, qty)
+		}
+
+		if err := reserveStock(ctx, tx, stockID, qty); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func releaseStockForTx(ctx context.Context, tx pgx.Tx, transactionID string) error {
+	moves, err := listTransactionStockMoves(ctx, tx, transactionID)
+	if err != nil {
+		return err
+	}
+	if len(moves) == 0 {
+		return pgx.ErrNoRows
+	}
+
+	need := map[string]int{}
+	for _, m := range moves {
+		need[m.StockProductID] += m.BaseQty
+	}
+
+	for stockID, qty := range need {
+		// lock to serialize concurrent operations
+		_, _, err := lockProductStock(ctx, tx, stockID)
+		if err != nil {
+			return err
+		}
+
+		if err := releaseReservedStock(ctx, tx, stockID, qty); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
