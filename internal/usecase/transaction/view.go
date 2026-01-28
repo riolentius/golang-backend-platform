@@ -27,6 +27,10 @@ type ViewItem struct {
 	Qty         int     `json:"qty"`
 	UnitAmount  string  `json:"unitAmount"`
 	LineTotal   string  `json:"lineTotal"`
+
+	PackSize       string  `json:"packSize"`
+	BaseProductID  *string `json:"baseProductId,omitempty"`
+	StockProductID string  `json:"stockProductId"`
 }
 
 type ViewPay struct {

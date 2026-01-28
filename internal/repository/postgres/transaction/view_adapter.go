@@ -56,6 +56,11 @@ func (a *TransactionStoreAdapter) GetViewByID(ctx context.Context, id string) (*
 			Qty:         it.Qty,
 			UnitAmount:  it.UnitAmount,
 			LineTotal:   it.LineTotal,
+
+			// NEW: helps you validate conversion in /view
+			PackSize:       it.PackSize,
+			BaseProductID:  it.BaseProductID,
+			StockProductID: it.StockProductID,
 		})
 	}
 

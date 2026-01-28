@@ -27,6 +27,10 @@ type TransactionViewItemRow struct {
 	Qty         int
 	UnitAmount  string
 	LineTotal   string
+
+	PackSize       string
+	BaseProductID  *string
+	StockProductID string
 }
 
 type TransactionViewPaymentRow struct {
@@ -89,7 +93,10 @@ SELECT
   p.name,
   ti.qty,
   ti.unit_amount::text,
-  ti.line_total::text
+  ti.line_total::text,
+  p.pack_size::text,
+  p.base_product_id::text,
+  COALESCE(p.base_product_id, p.id)::text AS stock_product_id
 FROM transaction_items ti
 JOIN products p ON p.id = ti.product_id
 WHERE ti.transaction_id = $1::uuid
@@ -104,7 +111,17 @@ ORDER BY ti.created_at ASC;
 	out := make([]TransactionViewItemRow, 0, 10)
 	for rows.Next() {
 		var it TransactionViewItemRow
-		if err := rows.Scan(&it.ProductID, &it.SKU, &it.ProductName, &it.Qty, &it.UnitAmount, &it.LineTotal); err != nil {
+		if err := rows.Scan(
+			&it.ProductID,
+			&it.SKU,
+			&it.ProductName,
+			&it.Qty,
+			&it.UnitAmount,
+			&it.LineTotal,
+			&it.PackSize,
+			&it.BaseProductID,
+			&it.StockProductID,
+		); err != nil {
 			return nil, err
 		}
 		out = append(out, it)
