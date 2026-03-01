@@ -116,13 +116,77 @@ func (a *TransactionStoreAdapter) List(ctx context.Context, in trxuc.ListInput) 
 }
 
 func (a *TransactionStoreAdapter) GetByID(ctx context.Context, id string) (*trxuc.Transaction, error) {
-	// implement next (select header + items)
-	return nil, errors.New("not implemented")
+	const q = `
+SELECT id::text, customer_id::text, status, currency, total_amount::text, notes, created_at, updated_at
+FROM transactions
+WHERE id = $1::uuid;
+`
+	var row TransactionRow
+	err := a.db.QueryRow(ctx, q, id).Scan(
+		&row.ID, &row.CustomerID, &row.Status, &row.Currency,
+		&row.TotalAmount, &row.Notes, &row.CreatedAt, &row.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, trxuc.ErrTransactionMissing
+		}
+		return nil, err
+	}
+
+	// fetch items
+	const itemQ = `
+SELECT id::text, transaction_id::text, product_id::text, qty, unit_amount::text, line_total::text, created_at, updated_at
+FROM transaction_items
+WHERE transaction_id = $1::uuid
+ORDER BY created_at ASC;
+`
+	rows, err := a.db.Query(ctx, itemQ, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []trxuc.Item
+	for rows.Next() {
+		var it TransactionItemRow
+		if err := rows.Scan(
+			&it.ID, &it.TransactionID, &it.ProductID,
+			&it.Qty, &it.UnitAmount, &it.LineTotal,
+			&it.CreatedAt, &it.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, mapTrxItemRow(&it))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	out := mapTrxRow(&row)
+	out.Items = items
+	return out, nil
 }
 
 func (a *TransactionStoreAdapter) UpdateStatus(ctx context.Context, id string, status string) (*trxuc.Transaction, error) {
-	// implement next (update status)
-	return nil, errors.New("not implemented")
+	tx, err := a.repo.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	row, err := updateTransactionStatus(ctx, tx, id, status)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, trxuc.ErrTransactionMissing
+		}
+		return nil, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+
+	return mapTrxRow(row), nil
 }
 
 func (a *TransactionStoreAdapter) ProductExists(ctx context.Context, productID string) (bool, error) {
