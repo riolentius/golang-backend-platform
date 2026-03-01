@@ -1,5 +1,7 @@
 # golang-backend-platform
 
+![CI](https://github.com/riolentius/golang-backend-platform/actions/workflows/ci.yml/badge.svg)
+
 A production-oriented backend built in Go — not to learn from a tutorial, but to solve a real problem.
 
 ---
