@@ -1,9 +1,11 @@
 package payment
 
 import (
-	"github.com/gofiber/fiber/v2"
+	"errors"
 
+	"github.com/gofiber/fiber/v2"
 	payuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/payment"
+	"github.com/riolentius/cahaya-gading-backend/pkg/apierr"
 )
 
 type Handler struct {
@@ -19,23 +21,15 @@ func (h *Handler) CreateForTransaction(c *fiber.Ctx) error {
 
 	var req payuc.CreateInput
 	if err := c.BodyParser(&req); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid body"})
+		return apierr.BadRequest(c, apierr.CodeInvalidInput, "request body is not valid JSON")
 	}
 	req.TransactionID = trxID
 
 	p, state, err := h.uc.Create(c.Context(), req)
 	if err != nil {
-		switch err {
-		case payuc.ErrInvalidInput:
-			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
-		case payuc.ErrTransactionMissing:
-			return c.Status(404).JSON(fiber.Map{"error": err.Error()})
-		default:
-			return c.Status(500).JSON(fiber.Map{"error": "internal error"})
-		}
+		return mapErr(c, err)
 	}
-
-	return c.Status(201).JSON(fiber.Map{
+	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"payment":     p,
 		"transaction": state,
 	})
@@ -46,11 +40,19 @@ func (h *Handler) ListForTransaction(c *fiber.Ctx) error {
 
 	items, err := h.uc.ListByTransaction(c.Context(), trxID)
 	if err != nil {
-		if err == payuc.ErrInvalidInput {
-			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
-		}
-		return c.Status(500).JSON(fiber.Map{"error": "internal error"})
+		return mapErr(c, err)
 	}
-
 	return c.JSON(fiber.Map{"items": items})
+}
+
+// mapErr translates payment usecase errors to consistent HTTP responses.
+func mapErr(c *fiber.Ctx, err error) error {
+	switch {
+	case errors.Is(err, payuc.ErrInvalidInput):
+		return apierr.BadRequest(c, apierr.CodeInvalidInput, err.Error())
+	case errors.Is(err, payuc.ErrTransactionMissing):
+		return apierr.NotFound(c, err.Error())
+	default:
+		return apierr.Internal(c)
+	}
 }

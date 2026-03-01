@@ -6,7 +6,10 @@ import (
 	"strings"
 )
 
-var ErrInvalidInput = errors.New("invalid input")
+var (
+	ErrInvalidInput = errors.New("invalid input")
+	ErrNotFound     = errors.New("product not found")
+)
 
 type Product struct {
 	ID            string  `json:"id"`
@@ -36,7 +39,7 @@ type CreateInput struct {
 	SKU         *string `json:"sku"`
 	Name        string  `json:"name"`
 	Description *string `json:"description"`
-	StockOnHand *int    `json:"stockOnHand"` // optional; default 0
+	StockOnHand *int    `json:"stockOnHand"`
 }
 
 func (u *Usecase) Create(ctx context.Context, in CreateInput) (*Product, error) {
@@ -44,7 +47,6 @@ func (u *Usecase) Create(ctx context.Context, in CreateInput) (*Product, error) 
 	if name == "" {
 		return nil, ErrInvalidInput
 	}
-
 	stock := 0
 	if in.StockOnHand != nil {
 		if *in.StockOnHand < 0 {
@@ -52,7 +54,6 @@ func (u *Usecase) Create(ctx context.Context, in CreateInput) (*Product, error) 
 		}
 		stock = *in.StockOnHand
 	}
-
 	return u.store.Create(ctx, in.SKU, name, in.Description, stock)
 }
 
@@ -78,7 +79,6 @@ func (u *Usecase) Update(ctx context.Context, id string, in UpdateInput) (*Produ
 	if strings.TrimSpace(id) == "" {
 		return nil, ErrInvalidInput
 	}
-
 	if in.Name != nil {
 		n := strings.TrimSpace(*in.Name)
 		if n == "" {
@@ -86,10 +86,8 @@ func (u *Usecase) Update(ctx context.Context, id string, in UpdateInput) (*Produ
 		}
 		in.Name = &n
 	}
-
 	if in.StockOnHand != nil && *in.StockOnHand < 0 {
 		return nil, ErrInvalidInput
 	}
-
 	return u.store.Update(ctx, id, in.SKU, in.Name, in.Description, in.IsActive, in.StockOnHand)
 }

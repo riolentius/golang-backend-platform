@@ -6,6 +6,12 @@ import (
 	"time"
 )
 
+var (
+	ErrInvalidInput    = errors.New("invalid input")
+	ErrNotFound        = errors.New("price not found")
+	ErrProductNotFound = errors.New("product not found")
+)
+
 type Store interface {
 	CreateForProduct(ctx context.Context, productID string, in CreateInput) (*ProductPrice, error)
 	ListForProduct(ctx context.Context, productID string) ([]ProductPrice, error)
@@ -22,7 +28,10 @@ func New(store Store) *Usecase {
 
 func (u *Usecase) CreateForProduct(ctx context.Context, productID string, in CreateInput) (*ProductPrice, error) {
 	if productID == "" {
-		return nil, errors.New("product id is required")
+		return nil, ErrInvalidInput
+	}
+	if in.Amount == "" {
+		return nil, ErrInvalidInput
 	}
 	if in.Currency == "" {
 		in.Currency = "IDR"
@@ -31,22 +40,19 @@ func (u *Usecase) CreateForProduct(ctx context.Context, productID string, in Cre
 		now := time.Now()
 		in.ValidFrom = &now
 	}
-	if in.Amount == "" {
-		return nil, errors.New("amount is required")
-	}
 	return u.store.CreateForProduct(ctx, productID, in)
 }
 
 func (u *Usecase) ListForProduct(ctx context.Context, productID string) ([]ProductPrice, error) {
 	if productID == "" {
-		return nil, errors.New("product id is required")
+		return nil, ErrInvalidInput
 	}
 	return u.store.ListForProduct(ctx, productID)
 }
 
 func (u *Usecase) Update(ctx context.Context, priceID string, in UpdateInput) (*ProductPrice, error) {
 	if priceID == "" {
-		return nil, errors.New("price id is required")
+		return nil, ErrInvalidInput
 	}
 	return u.store.Update(ctx, priceID, in)
 }

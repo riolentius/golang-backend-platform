@@ -1,9 +1,11 @@
 package customer
 
 import (
-	"github.com/gofiber/fiber/v2"
+	"errors"
 
+	"github.com/gofiber/fiber/v2"
 	customeruc "github.com/riolentius/cahaya-gading-backend/internal/usecase/customer"
+	"github.com/riolentius/cahaya-gading-backend/pkg/apierr"
 )
 
 type Handler struct {
@@ -17,10 +19,14 @@ func New(uc *customeruc.Usecase) *Handler {
 func (h *Handler) Create(c *fiber.Ctx) error {
 	var in customeruc.CreateInput
 	if err := c.BodyParser(&in); err != nil {
-		return fiber.NewError(fiber.StatusBadRequest, "invalid json")
+		return apierr.BadRequest(c, apierr.CodeInvalidInput, "request body is not valid JSON")
 	}
+
 	out, err := h.uc.Create(c.Context(), in)
-	return writeOne(c, out, err, fiber.StatusCreated)
+	if err != nil {
+		return mapErr(c, err)
+	}
+	return c.Status(fiber.StatusCreated).JSON(out)
 }
 
 func (h *Handler) List(c *fiber.Ctx) error {
@@ -37,37 +43,35 @@ func (h *Handler) List(c *fiber.Ctx) error {
 func (h *Handler) GetByID(c *fiber.Ctx) error {
 	id := c.Params("id")
 	out, err := h.uc.GetByID(c.Context(), id)
-	return writeOne(c, out, err, fiber.StatusOK)
+	if err != nil {
+		return mapErr(c, err)
+	}
+	return c.Status(fiber.StatusOK).JSON(out)
 }
 
 func (h *Handler) Update(c *fiber.Ctx) error {
 	id := c.Params("id")
-
 	var in customeruc.UpdateInput
 	if err := c.BodyParser(&in); err != nil {
-		return fiber.NewError(fiber.StatusBadRequest, "invalid json")
+		return apierr.BadRequest(c, apierr.CodeInvalidInput, "request body is not valid JSON")
 	}
 
 	out, err := h.uc.Update(c.Context(), id, in)
-	return writeOne(c, out, err, fiber.StatusOK)
-}
-
-func writeOne(c *fiber.Ctx, out *customeruc.Customer, err error, okStatus int) error {
 	if err != nil {
 		return mapErr(c, err)
 	}
-	return c.Status(okStatus).JSON(out)
+	return c.Status(fiber.StatusOK).JSON(out)
 }
 
 func mapErr(c *fiber.Ctx, err error) error {
-	switch err {
-	case customeruc.ErrInvalidInput:
-		return fiber.NewError(fiber.StatusBadRequest, err.Error())
-	case customeruc.ErrNotFound:
-		return fiber.NewError(fiber.StatusNotFound, err.Error())
-	case customeruc.ErrEmailConflict:
-		return fiber.NewError(fiber.StatusConflict, err.Error())
+	switch {
+	case errors.Is(err, customeruc.ErrInvalidInput):
+		return apierr.BadRequest(c, apierr.CodeInvalidInput, err.Error())
+	case errors.Is(err, customeruc.ErrNotFound):
+		return apierr.NotFound(c, err.Error())
+	case errors.Is(err, customeruc.ErrEmailConflict):
+		return apierr.Conflict(c, apierr.CodeConflict, err.Error())
 	default:
-		return fiber.NewError(fiber.StatusInternalServerError, "internal error")
+		return apierr.Internal(c)
 	}
 }
