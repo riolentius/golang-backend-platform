@@ -1,104 +1,167 @@
-# Golang Backend Platform (Production-Oriented)
+# golang-backend-platform
 
-This repository contains a **production-oriented backend platform** built with Golang + PostgreSQL
-design to model a real-world business workflow, such as:
-- Product & Price Management
-- Customer categorization
-- Transactions & fulfillment
-- Stock Control
-- Partial and Multi-stage payments
-
-This project is intentionally structured to demonstrate **clean architecture, transactional correctness, and operational readiness**, not just CRUD Endpoints.
-
-This is an upgrade and re-architecture of a previous tenant-based system, rebuilt to support:
-- Strong domain boundaries
-- Financial correctness
-- Future frontend and integration work
+A production-oriented backend built in Go — not to learn from a tutorial, but to solve a real problem.
 
 ---
 
-## What This Backend Does
+## Why I built this
 
-At a high level, the system supports the following real-world flow:
-1. **Create Customers**
-    - Customers and belong to pricing categories (e.g. Regular, Special or VIP)
-2. **Create products**
-    - Products have stock, prices, and active/inactive state
-3. **Define prices per category**
-    - One product can have different prices per customer category
-4. **Create transactions**
-    - Transactions contain multiple items
-    - Prices are resolved based on customer category
-5. **Fulfill transactions**
-    - Stock is deducted at fulfillment time (not at order creation)
-6. **Record payments**
-    - Support cash or transfer (later maybe will connected to payment gateway too)
-    - Supports partial payments
-    - Transaction payment state is recalculated automatically
+A friend runs a small shop. They needed something to track products, manage stock, record transactions, and handle payments from customers who often pay in installments. They were doing it manually — spreadsheets, paper, memory.
 
-This mirrors how real shops and SMEs operate, especially in Indonesia.
+I built this for them. It runs on a local network and they still use it today.
+
+But I also built it to prove something to myself: that I could design a backend that reflects how a real business actually operates, not just how a tutorial says it should.
 
 ---
-## Core Domain Concepts
 
-**Products**
-  - Master data only
-  - Stock is tracked directly on the product
-  - Prices are stored separately for flexibility and history
+## The core insight
 
-**Customers**
-  - Can belong to a category
-  - Category determines effective price during transaction
+Most beginner projects deduct stock when an order is created. That's wrong for how real shops work.
 
-**Transactions**
-  - Created independently of payment
-  - Immutable line items
-  - Fulfillment controls stock deduction
-  - Status-driven lifecycle
+In a real shop, you don't lose the item when someone says "I want to buy this." You lose it when you physically hand it over. A customer might order, then cancel. Stock that was "deducted" on order creation becomes a ghost — your numbers are wrong and you don't know why.
 
-**Payments**
-  - Multiple payments per transaction
-  - Partial, full, or overpaid supported
-  - Transaction payment status updates automatically
+So in this system:
+
+- **Draft** → order exists, no stock touched
+- **Pending** → stock is _reserved_ (set aside, not deducted)
+- **Fulfilled** → stock is _committed_ (actually deducted from inventory)
+- **Cancelled** → reserved stock is _released_ back
+
+This mirrors how the shop owner thinks. It also means your stock numbers are always trustworthy.
 
 ---
-## Architecture Principles Used
 
-This project follows some best practice and Clean Architecture-style separation, adapted pragmatically for Go:
-```pgsql
+## The other insight: partial payments
+
+Indonesian SMEs don't always pay in full upfront. Customers pay what they can, when they can. A system that only knows "paid" or "unpaid" doesn't model reality.
+
+So payments are tracked separately from transactions. Each transaction can have multiple payments. The system automatically recalculates payment status after every payment:
+
+- `unpaid` → no payments yet
+- `partial` → some payments made, but not enough
+- `paid` → exactly covered
+- `overpaid` → customer paid more than the total (happens more than you'd think)
+
+---
+
+## Architecture
+
+I used Clean Architecture — not because the internet says to, but because it solved a real problem for me: I wanted to test my business logic without a running database.
+
+```
 cmd/
 internal/
-  delivery/        --> HTTP handlers
-  usecase/         --> domain logic (Business rules)
-  repository/      --> Database access (postgresql)
-  config/          --> App Config
-  db/              --> DB bootstrap
-migrations/        --> Sql Migrations (Goose)
+  delivery/      → HTTP handlers (Fiber) — how the outside world talks to the app
+  usecase/       → business logic — the rules of the domain
+  repository/    → database access (PostgreSQL via pgx)
+  config/        → environment and app config
+migrations/      → SQL migrations (Goose)
+```
+
+The layers only talk in one direction: delivery calls usecase, usecase calls repository. The usecase layer defines interfaces — it doesn't know or care whether the repository is PostgreSQL, an in-memory mock, or something else entirely.
+
+This is why I can run 49 unit tests in under a second with zero database involvement.
+
+---
+
+## Key design decisions
+
+**Stock lives on the product, not the transaction**
+Stock is tracked directly on `products` as `stock_on_hand` and `stock_reserved`. When you reserve stock for a pending transaction, `stock_reserved` goes up. When you fulfill, `stock_on_hand` goes down and `stock_reserved` goes down. Available stock at any point = `stock_on_hand - stock_reserved`.
+
+**Category-based pricing**
+One product can have different prices for different customer categories (Regular, VIP, Wholesale). Price is resolved at transaction creation time based on the customer's category, with a fallback to the default price if no category-specific price exists.
+
+**Pack size support**
+Some products are sold in packs of a base unit — for example, you sell "Box of 12" but your stock is tracked in individual units. `pack_size` handles this conversion so stock deduction is always in base units, regardless of what the customer is buying.
+
+**Payments are independent of transactions**
+A transaction is created without any payment. Payments are recorded separately and can be partial. The transaction's `payment_status` is recomputed automatically using a single SQL CTE every time a new payment is added — no application-level logic needed for the recalculation.
+
+---
+
+## Testing strategy
+
+Two layers of tests, each with a different job:
+
+**Unit tests** (`internal/usecase/...`)
+Test business logic in complete isolation using a mock store. No database, no network, no setup. All 49 tests run in under one second. These catch logic bugs — wrong status transitions, missing validation, incorrect stock operation sequencing.
+
+**Integration tests** (`internal/repository/...`)
+Test the real SQL against a real PostgreSQL database. These catch database bugs — wrong queries, constraint violations, transaction isolation issues. Run via Docker Compose locally or GitHub Actions CI in the pipeline.
+
+```bash
+# Unit tests (no DB needed)
+go test ./internal/usecase/... -v
+
+# Integration tests (requires DATABASE_URL)
+go test ./internal/repository/... -v -count=1 -tags=integration
 ```
 
 ---
-## API Coverage (Current)
-Implemented endpoints include:
-- Admin Auth (JWT)
-- Product CRUD
-- Product Price CRUD
-- Customer CRUD
-- Transaction creation & listing
-- Transaction fulfillment
-- Payment creation & listing
-This is sufficient to support a real frontend.
+
+## Running locally
+
+**Prerequisites:** Go 1.24+, Docker
+
+```bash
+# Clone the repo
+git clone https://github.com/riolentius/golang-backend-platform.git
+cd golang-backend-platform
+
+# Copy env file and fill in your values
+cp .env.sample .env
+
+# Start the database
+docker compose up db -d
+
+# Run migrations
+goose -dir ./migrations postgres "$DATABASE_URL" up
+
+# Run the server
+go run ./cmd/api
+```
+
+Or run the whole stack at once:
+
+```bash
+docker compose up
+```
 
 ---
-## Project Status
-- Core backend domain will be still updated.
-- Ready for :
-  - Frontend integration
-  - Extended payment logic
-  - CI/CD
-  - Reporting
- 
----
-## Disclaimer
-This repository is not a tutorial project.
 
-It is a learning-driven for production system, built to reflect how real systems behave under real constraints.
+## Tech stack
+
+| Layer            | Choice         |
+| ---------------- | -------------- |
+| Language         | Go 1.24        |
+| HTTP Framework   | Fiber v2       |
+| Database         | PostgreSQL     |
+| DB Driver        | pgx/v5         |
+| Migrations       | Goose          |
+| Auth             | JWT            |
+| Containerization | Docker         |
+| CI               | GitHub Actions |
+
+---
+
+## Current status
+
+The backend is complete and covers the full business workflow. It is actively used by a real user on a local network.
+
+Planned next:
+
+- Admin UI (frontend)
+- OpenAPI / Swagger documentation
+- Extended reporting
+- Payment gateway integration
+
+---
+
+## What I learned
+
+Before this project, I mostly learned Go from documentation and small scripts. This project forced me to make real decisions under real constraints — not "what does the tutorial say" but "what actually makes sense for this business."
+
+The biggest shift was thinking about the domain first. I've spent years as a Business Analyst understanding how businesses work before writing a single line of code. That background made a real difference here. The stock reservation logic, the partial payment model, the category-based pricing — none of that came from a Go tutorial. It came from understanding the problem.
+
+That's the kind of engineer I'm trying to be.
