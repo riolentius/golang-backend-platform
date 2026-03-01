@@ -41,35 +41,48 @@ func mustQueryStr(t *testing.T, pool *pgxpool.Pool, q string, args ...any) strin
 	return out
 }
 
-// seed minimal dataset:
-// - customer_categories (optional)
-// - customers
-// - products (+ stock_on_hand)
-// - product_prices (default price)
+// truncateAll clears all test data between tests to avoid constraint violations
+func truncateAll(t *testing.T, pool *pgxpool.Pool) {
+	t.Helper()
+	mustExec(t, pool, `
+		TRUNCATE TABLE
+			payments,
+			transaction_items,
+			transactions,
+			product_prices,
+			products,
+			customers,
+			customer_categories
+		RESTART IDENTITY CASCADE;
+	`)
+}
+
+// seed minimal dataset with unique SKU and email per test run
 func seedCustomerProductPrice(t *testing.T, pool *pgxpool.Pool) (customerID string, productID string) {
 	t.Helper()
 
-	// customer category (optional) — if your schema allows null category_id, you can skip this
+	suffix := time.Now().Format("150405.000")
+
 	categoryID := mustQueryStr(t, pool, `
 		INSERT INTO customer_categories (code, name)
-		VALUES ('REGULAR', 'Regular')
-		ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name
+		VALUES ($1, 'Regular')
 		RETURNING id::text;
-	`)
+	`, "REGULAR-"+suffix)
 
 	customerID = mustQueryStr(t, pool, `
 		INSERT INTO customers (first_name, last_name, email, category_id)
-		VALUES ('Rio', 'Test', 'rio.tx.test.`+time.Now().Format("150405.000")+`@example.com', $1::uuid)
+		VALUES ('Rio', 'Test', $1, $2::uuid)
 		RETURNING id::text;
-	`, categoryID)
+	`, "rio.test."+suffix+"@example.com", categoryID)
 
+	// unique SKU per test run — prevents duplicate key violation
+	sku := "SKU-TX-" + suffix
 	productID = mustQueryStr(t, pool, `
 		INSERT INTO products (sku, name, description, is_active, stock_on_hand, stock_reserved)
-		VALUES ('SKU-TX-001', 'Teh Botol', 'Drink', true, 10, 0)
+		VALUES ($1, 'Teh Botol', 'Drink', true, 10, 0)
 		RETURNING id::text;
-	`)
+	`, sku)
 
-	// default price (category_id NULL)
 	mustExec(t, pool, `
 		INSERT INTO product_prices (product_id, category_id, currency, amount, valid_from, valid_to)
 		VALUES ($1::uuid, NULL, 'IDR', 5000, now(), NULL);
@@ -80,11 +93,10 @@ func seedCustomerProductPrice(t *testing.T, pool *pgxpool.Pool) (customerID stri
 
 // --- Tests ---------------------------------------------------------------
 
-// This test validates:
-// - Create transaction works (inserts header + items)
-// - Total amount is calculated
 func TestTransaction_Create_OK(t *testing.T) {
 	pool := mustTestPool(t)
+	truncateAll(t, pool)
+
 	repo := NewTransactionRepo(pool)
 	store := NewTransactionStoreAdapter(repo, pool)
 	uc := txuc.New(store)
@@ -103,8 +115,6 @@ func TestTransaction_Create_OK(t *testing.T) {
 	require.NotEmpty(t, out.ID)
 	require.Equal(t, customerID, out.CustomerID)
 	require.Equal(t, txuc.StatusDraft, out.Status)
-
-	// Total should be 5000 * 2 = 10000.00
 	require.Equal(t, "10000.00", out.TotalAmount)
 	require.Equal(t, "IDR", out.Currency)
 	require.Len(t, out.Items, 1)
@@ -112,10 +122,10 @@ func TestTransaction_Create_OK(t *testing.T) {
 	require.Equal(t, 2, out.Items[0].Qty)
 }
 
-// This test validates:
-// - Create fails when customer not found
 func TestTransaction_Create_CustomerMissing(t *testing.T) {
 	pool := mustTestPool(t)
+	truncateAll(t, pool)
+
 	repo := NewTransactionRepo(pool)
 	store := NewTransactionStoreAdapter(repo, pool)
 	uc := txuc.New(store)
@@ -131,19 +141,17 @@ func TestTransaction_Create_CustomerMissing(t *testing.T) {
 	require.ErrorIs(t, err, txuc.ErrCustomerMissing)
 }
 
-// This validates reservation/commit workflow (best practice):
-// - create as draft (no stock change)
-// - update status to pending (reserve stock)
-// - fulfill/commit -> deduct stock_on_hand
 func TestTransaction_StatusAndStockFlow(t *testing.T) {
 	pool := mustTestPool(t)
+	truncateAll(t, pool)
+
 	repo := NewTransactionRepo(pool)
 	store := NewTransactionStoreAdapter(repo, pool)
 	uc := txuc.New(store)
 
 	customerID, productID := seedCustomerProductPrice(t, pool)
 
-	// Create draft (no reserve, no commit)
+	// Create draft — no stock change
 	tx, err := uc.Create(context.Background(), txuc.CreateInput{
 		CustomerID: customerID,
 		Status:     txuc.StatusDraft,
@@ -161,7 +169,7 @@ func TestTransaction_StatusAndStockFlow(t *testing.T) {
 	require.Equal(t, 10, onHand)
 	require.Equal(t, 0, reserved)
 
-	// Move to pending -> reserve stock (reserved becomes +3)
+	// Move to pending -> reserve stock
 	tx, err = uc.UpdateStatus(context.Background(), tx.ID, txuc.UpdateStatusInput{Status: txuc.StatusPending})
 	require.NoError(t, err)
 	require.Equal(t, txuc.StatusPending, tx.Status)
@@ -173,7 +181,7 @@ func TestTransaction_StatusAndStockFlow(t *testing.T) {
 	require.Equal(t, 10, onHand)
 	require.Equal(t, 3, reserved)
 
-	// Fulfill -> commit stock (on_hand should become 7, reserved should become 0)
+	// Fulfill -> commit stock
 	tx, err = uc.Fulfill(context.Background(), tx.ID)
 	require.NoError(t, err)
 	require.Equal(t, txuc.StatusCompleted, tx.Status)
@@ -186,9 +194,10 @@ func TestTransaction_StatusAndStockFlow(t *testing.T) {
 	require.Equal(t, 0, reserved)
 }
 
-// Validate insufficient stock when trying to reserve/commit more than available.
 func TestTransaction_InsufficientStock(t *testing.T) {
 	pool := mustTestPool(t)
+	truncateAll(t, pool)
+
 	repo := NewTransactionRepo(pool)
 	store := NewTransactionStoreAdapter(repo, pool)
 	uc := txuc.New(store)
@@ -198,7 +207,7 @@ func TestTransaction_InsufficientStock(t *testing.T) {
 	// request 999 from stock 10
 	_, err := uc.Create(context.Background(), txuc.CreateInput{
 		CustomerID: customerID,
-		Status:     txuc.StatusPending, // will validate stock
+		Status:     txuc.StatusPending,
 		Items: []txuc.CreateItemIn{
 			{ProductID: productID, Qty: 999},
 		},
