@@ -8,6 +8,8 @@ import (
 	"github.com/riolentius/cahaya-gading-backend/internal/config"
 	authhandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/auth"
 	customerhandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/customer"
+	addrhandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/customer_address"
+	categoryhandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/customer_category"
 	payhandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/payment"
 	producthandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/product"
 	pricehandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/product_price"
@@ -15,12 +17,16 @@ import (
 	"github.com/riolentius/cahaya-gading-backend/internal/delivery/middleware"
 	adminpg "github.com/riolentius/cahaya-gading-backend/internal/repository/postgres/admin"
 	customerpg "github.com/riolentius/cahaya-gading-backend/internal/repository/postgres/customer"
+	addrpg "github.com/riolentius/cahaya-gading-backend/internal/repository/postgres/customer_address"
+	categorypg "github.com/riolentius/cahaya-gading-backend/internal/repository/postgres/customer_category"
 	paypg "github.com/riolentius/cahaya-gading-backend/internal/repository/postgres/payment"
 	productpg "github.com/riolentius/cahaya-gading-backend/internal/repository/postgres/product"
 	pricepg "github.com/riolentius/cahaya-gading-backend/internal/repository/postgres/product_price"
 	trxpg "github.com/riolentius/cahaya-gading-backend/internal/repository/postgres/transaction"
 	authuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/auth"
 	customeruc "github.com/riolentius/cahaya-gading-backend/internal/usecase/customer"
+	addruc "github.com/riolentius/cahaya-gading-backend/internal/usecase/customer_address"
+	categoryuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/customer_category"
 	payuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/payment"
 	productuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/product"
 	priceuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/product_price"
@@ -34,84 +40,93 @@ func RegisterRoutes(app *fiber.App, cfg config.Config, db *pgxpool.Pool) {
 
 	api := app.Group("/api")
 
-	// Auth wiring
+	// ── Auth ─────────────────────────────────────────────────
 	adminRepo := adminpg.NewAdminRepo(db)
 	adminFinder := &adminFinderAdapter{repo: adminRepo}
 	loginUC := authuc.NewAdminLoginUsecase(adminFinder, cfg.JWTSecret, cfg.JWTExpiresMinutes)
-	loginHandler := authhandler.NewAdminLoginHandler(loginUC)
+	loginH := authhandler.NewAdminLoginHandler(loginUC)
 
-	// Public route
-	api.Post("/admin/login", loginHandler.Handle)
+	api.Post("/admin/login", loginH.Handle)
 
-	// Protected admin group (MUST be defined before use)
 	admin := api.Group("/admin", middleware.RequireAdminJWT(middleware.JWTConfig{
 		Secret: cfg.JWTSecret,
 	}))
 
 	admin.Get("/me", func(c *fiber.Ctx) error {
-		return c.JSON(fiber.Map{
-			"ok":     true,
-			"claims": c.Locals("claims"),
-		})
+		return c.JSON(fiber.Map{"ok": true, "claims": c.Locals("claims")})
 	})
 
-	// Products wiring
-	productRepo := productpg.NewProductRepo(db)
-	productStore := productpg.NewProductStoreAdapter(productRepo)
-	productUC := productuc.New(productStore)
-	productH := producthandler.New(productUC)
+	// ── Customer Categories ───────────────────────────────────
+	categoryRepo := categorypg.NewCustomerCategoryRepo(db)
+	categoryStore := categorypg.NewCustomerCategoryStoreAdapter(categoryRepo)
+	categoryUC := categoryuc.New(categoryStore)
+	categoryH := categoryhandler.New(categoryUC)
 
-	// Prices wiring
-	priceRepo := pricepg.NewProductPriceRepo(db)
-	priceStore := pricepg.NewProductPriceStoreAdapter(priceRepo)
-	priceUC := priceuc.New(priceStore)
-	priceH := pricehandler.New(priceUC)
+	admin.Get("/customer-categories", categoryH.List)
 
-	// Transactions wiring
-	trxRepo := trxpg.NewTransactionRepo(db)
-	trxStore := trxpg.NewTransactionStoreAdapter(trxRepo, db)
-	trxUC := txuc.New(trxStore)
-	trxH := trxhandler.New(trxUC)
-
-	// Customer wiring
+	// ── Customers ─────────────────────────────────────────────
 	customerRepo := customerpg.NewCustomerRepo(db)
 	customerStore := customerpg.NewCustomerStoreAdapter(customerRepo)
 	customerUC := customeruc.New(customerStore)
 	customerH := customerhandler.New(customerUC)
 
-	// Payments wiring
-	paymentRepo := paypg.NewPaymentRepo(db)
-	paymentStore := paypg.NewPaymentStoreAdapter(paymentRepo)
-	paymentUC := payuc.New(paymentStore)
-	paymentH := payhandler.New(paymentUC)
-
-	// Endpoints
-	admin.Get("/transactions/:id/view", trxH.GetViewByID)
-	admin.Post("/transactions/:id/payments", paymentH.CreateForTransaction)
-	admin.Get("/transactions/:id/payments", paymentH.ListForTransaction)
-	admin.Post("/transactions/:id/fulfill", trxH.Fulfill)
-
-	// Customer routes
 	admin.Post("/customers", customerH.Create)
 	admin.Get("/customers", customerH.List)
 	admin.Get("/customers/:id", customerH.GetByID)
 	admin.Patch("/customers/:id", customerH.Update)
 
-	// Transaction routes
-	admin.Post("/transactions", trxH.Create)
-	admin.Get("/transactions", trxH.List)
-	admin.Get("/transactions/:id", trxH.GetByID)
-	admin.Patch("/transactions/:id/status", trxH.UpdateStatus)
+	// ── Customer Addresses ────────────────────────────────────
+	addrRepo := addrpg.NewCustomerAddressRepo(db)
+	addrStore := addrpg.NewCustomerAddressStoreAdapter(addrRepo)
+	addrUC := addruc.New(addrStore)
+	addrH := addrhandler.New(addrUC)
 
-	// Product routes
+	admin.Get("/customers/:id/addresses", addrH.List)
+	admin.Post("/customers/:id/addresses", addrH.Create)
+	admin.Patch("/customers/:id/addresses/:addressId", addrH.Update)
+	admin.Delete("/customers/:id/addresses/:addressId", addrH.Delete)
+
+	// ── Products ──────────────────────────────────────────────
+	productRepo := productpg.NewProductRepo(db)
+	productStore := productpg.NewProductStoreAdapter(productRepo)
+	productUC := productuc.New(productStore)
+	productH := producthandler.New(productUC)
+
 	admin.Post("/products", productH.Create)
 	admin.Get("/products", productH.List)
 	admin.Patch("/products/:id", productH.Update)
 
-	// Product price routes
+	// ── Product Prices ────────────────────────────────────────
+	priceRepo := pricepg.NewProductPriceRepo(db)
+	priceStore := pricepg.NewProductPriceStoreAdapter(priceRepo)
+	priceUC := priceuc.New(priceStore)
+	priceH := pricehandler.New(priceUC)
+
 	admin.Post("/products/:id/prices", priceH.CreateForProduct)
 	admin.Get("/products/:id/prices", priceH.ListForProduct)
 	admin.Patch("/prices/:id", priceH.Update)
+
+	// ── Transactions ──────────────────────────────────────────
+	trxRepo := trxpg.NewTransactionRepo(db)
+	trxStore := trxpg.NewTransactionStoreAdapter(trxRepo, db)
+	trxUC := txuc.New(trxStore)
+	trxH := trxhandler.New(trxUC)
+
+	admin.Post("/transactions", trxH.Create)
+	admin.Get("/transactions", trxH.List)
+	admin.Get("/transactions/:id", trxH.GetByID)
+	admin.Get("/transactions/:id/view", trxH.GetViewByID)
+	admin.Post("/transactions/:id/fulfill", trxH.Fulfill)
+	admin.Patch("/transactions/:id/status", trxH.UpdateStatus)
+
+	// ── Payments ─────────────────────────────────────────────
+	paymentRepo := paypg.NewPaymentRepo(db)
+	paymentStore := paypg.NewPaymentStoreAdapter(paymentRepo)
+	paymentUC := payuc.New(paymentStore)
+	paymentH := payhandler.New(paymentUC)
+
+	admin.Post("/transactions/:id/payments", paymentH.CreateForTransaction)
+	admin.Get("/transactions/:id/payments", paymentH.ListForTransaction)
 }
 
 type adminFinderAdapter struct {

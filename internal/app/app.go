@@ -4,9 +4,9 @@ import (
 	"log"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
-
 	"github.com/riolentius/cahaya-gading-backend/internal/config"
 	"github.com/riolentius/cahaya-gading-backend/internal/db"
 	httpdelivery "github.com/riolentius/cahaya-gading-backend/internal/delivery/http"
@@ -30,6 +30,12 @@ func New() *App {
 
 	f.Use(recover.New())
 	f.Use(logger.New())
+
+	f.Use(cors.New(cors.Config{
+		AllowOrigins: "http://localhost:3000",
+		AllowHeaders: "Origin, Content-Type, Authorization",
+		AllowMethods: "GET, POST, PATCH, DELETE, OPTIONS",
+	}))
 
 	httpdelivery.RegisterRoutes(f, cfg, pool)
 
