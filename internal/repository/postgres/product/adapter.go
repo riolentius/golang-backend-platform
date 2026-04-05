@@ -19,9 +19,10 @@ func (a *ProductStoreAdapter) Create(
 	sku *string,
 	name string,
 	description *string,
+	cost string,
 	stockOnHand int,
 ) (*productuc.Product, error) {
-	row, err := a.repo.Create(ctx, sku, name, description, stockOnHand)
+	row, err := a.repo.Create(ctx, sku, name, description, cost, stockOnHand)
 	if err != nil {
 		return nil, err
 	}
@@ -37,7 +38,6 @@ func (a *ProductStoreAdapter) List(
 	if err != nil {
 		return nil, err
 	}
-
 	out := make([]productuc.Product, 0, len(rows))
 	for i := range rows {
 		out = append(out, *mapProductRowToUC(&rows[i]))
@@ -51,10 +51,11 @@ func (a *ProductStoreAdapter) Update(
 	sku *string,
 	name *string,
 	description *string,
+	cost *string,
 	isActive *bool,
 	stockOnHand *int,
 ) (*productuc.Product, error) {
-	row, err := a.repo.Update(ctx, id, sku, name, description, isActive, stockOnHand)
+	row, err := a.repo.Update(ctx, id, sku, name, description, cost, isActive, stockOnHand)
 	if err != nil {
 		return nil, err
 	}
@@ -67,6 +68,7 @@ func mapProductRowToUC(r *ProductRow) *productuc.Product {
 		SKU:           r.SKU,
 		Name:          r.Name,
 		Description:   r.Description,
+		Cost:          r.Cost,
 		IsActive:      r.IsActive,
 		StockOnHand:   r.StockOnHand,
 		StockReserved: r.StockReserved,

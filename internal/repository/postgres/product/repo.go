@@ -12,6 +12,7 @@ type ProductRow struct {
 	SKU           *string
 	Name          string
 	Description   *string
+	Cost          string // NUMERIC stored as string e.g. "50000.00"
 	IsActive      bool
 	StockOnHand   int
 	StockReserved int
@@ -32,29 +33,22 @@ func (r *ProductRepo) Create(
 	sku *string,
 	name string,
 	description *string,
+	cost string,
 	stockOnHand int,
 ) (*ProductRow, error) {
 	const q = `
-INSERT INTO products (sku, name, description, stock_on_hand)
-VALUES ($1, $2, $3, $4)
+INSERT INTO products (sku, name, description, cost, stock_on_hand)
+VALUES ($1, $2, $3, $4, $5)
 RETURNING
-  id::text, sku, name, description, is_active,
-  stock_on_hand, stock_reserved,
+  id::text, sku, name, description, cost::text,
+  is_active, stock_on_hand, stock_reserved,
   created_at, updated_at;
 `
-	row := r.db.QueryRow(ctx, q, sku, name, description, stockOnHand)
-
 	var out ProductRow
-	if err := row.Scan(
-		&out.ID,
-		&out.SKU,
-		&out.Name,
-		&out.Description,
-		&out.IsActive,
-		&out.StockOnHand,
-		&out.StockReserved,
-		&out.CreatedAt,
-		&out.UpdatedAt,
+	if err := r.db.QueryRow(ctx, q, sku, name, description, cost, stockOnHand).Scan(
+		&out.ID, &out.SKU, &out.Name, &out.Description, &out.Cost,
+		&out.IsActive, &out.StockOnHand, &out.StockReserved,
+		&out.CreatedAt, &out.UpdatedAt,
 	); err != nil {
 		return nil, err
 	}
@@ -64,8 +58,8 @@ RETURNING
 func (r *ProductRepo) List(ctx context.Context, limit int, offset int) ([]ProductRow, error) {
 	const q = `
 SELECT
-  id::text, sku, name, description, is_active,
-  stock_on_hand, stock_reserved,
+  id::text, sku, name, description, cost::text,
+  is_active, stock_on_hand, stock_reserved,
   created_at, updated_at
 FROM products
 ORDER BY created_at DESC
@@ -81,15 +75,9 @@ LIMIT $1 OFFSET $2;
 	for rows.Next() {
 		var p ProductRow
 		if err := rows.Scan(
-			&p.ID,
-			&p.SKU,
-			&p.Name,
-			&p.Description,
-			&p.IsActive,
-			&p.StockOnHand,
-			&p.StockReserved,
-			&p.CreatedAt,
-			&p.UpdatedAt,
+			&p.ID, &p.SKU, &p.Name, &p.Description, &p.Cost,
+			&p.IsActive, &p.StockOnHand, &p.StockReserved,
+			&p.CreatedAt, &p.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -104,37 +92,33 @@ func (r *ProductRepo) Update(
 	sku *string,
 	name *string,
 	description *string,
+	cost *string,
 	isActive *bool,
 	stockOnHand *int,
 ) (*ProductRow, error) {
 	const q = `
 UPDATE products
 SET
-  sku = COALESCE($2, sku),
-  name = COALESCE($3, name),
-  description = COALESCE($4, description),
-  is_active = COALESCE($5, is_active),
-  stock_on_hand = COALESCE($6, stock_on_hand),
-  updated_at = now()
+  sku          = COALESCE($2, sku),
+  name         = COALESCE($3, name),
+  description  = COALESCE($4, description),
+  cost         = COALESCE($5::numeric, cost),
+  is_active    = COALESCE($6, is_active),
+  stock_on_hand = COALESCE($7, stock_on_hand),
+  updated_at   = now()
 WHERE id = $1::uuid
 RETURNING
-  id::text, sku, name, description, is_active,
-  stock_on_hand, stock_reserved,
+  id::text, sku, name, description, cost::text,
+  is_active, stock_on_hand, stock_reserved,
   created_at, updated_at;
 `
-	row := r.db.QueryRow(ctx, q, id, sku, name, description, isActive, stockOnHand)
-
 	var out ProductRow
-	if err := row.Scan(
-		&out.ID,
-		&out.SKU,
-		&out.Name,
-		&out.Description,
-		&out.IsActive,
-		&out.StockOnHand,
-		&out.StockReserved,
-		&out.CreatedAt,
-		&out.UpdatedAt,
+	if err := r.db.QueryRow(ctx, q,
+		id, sku, name, description, cost, isActive, stockOnHand,
+	).Scan(
+		&out.ID, &out.SKU, &out.Name, &out.Description, &out.Cost,
+		&out.IsActive, &out.StockOnHand, &out.StockReserved,
+		&out.CreatedAt, &out.UpdatedAt,
 	); err != nil {
 		return nil, err
 	}

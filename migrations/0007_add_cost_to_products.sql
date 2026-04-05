@@ -1,0 +1,6 @@
+-- +goose Up
+ALTER TABLE products
+ADD COLUMN IF NOT EXISTS cost NUMERIC(15, 2) NOT NULL DEFAULT 0;
+
+-- +goose Down
+ALTER TABLE products DROP COLUMN IF EXISTS cost;
