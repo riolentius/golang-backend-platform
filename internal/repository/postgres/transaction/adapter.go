@@ -111,8 +111,30 @@ func (a *TransactionStoreAdapter) Create(ctx context.Context, in trxuc.CreateInp
 }
 
 func (a *TransactionStoreAdapter) List(ctx context.Context, in trxuc.ListInput) ([]trxuc.Transaction, error) {
-	// implement next (simple select)
-	return nil, errors.New("not implemented")
+	const q = `
+SELECT id::text, customer_id::text, status, currency, total_amount::text, notes, created_at, updated_at
+FROM transactions
+ORDER BY created_at DESC
+LIMIT $1 OFFSET $2;
+`
+	rows, err := a.db.Query(ctx, q, in.Limit, in.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]trxuc.Transaction, 0)
+	for rows.Next() {
+		var row TransactionRow
+		if err := rows.Scan(
+			&row.ID, &row.CustomerID, &row.Status, &row.Currency,
+			&row.TotalAmount, &row.Notes, &row.CreatedAt, &row.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, *mapTrxRow(&row))
+	}
+	return out, rows.Err()
 }
 
 func (a *TransactionStoreAdapter) GetByID(ctx context.Context, id string) (*trxuc.Transaction, error) {
