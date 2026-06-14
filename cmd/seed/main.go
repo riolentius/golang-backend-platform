@@ -9,24 +9,25 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/riolentius/cahaya-gading-backend/internal/config"
 	"github.com/riolentius/cahaya-gading-backend/internal/db"
+	"golang.org/x/crypto/bcrypt"
 )
 
 func main() {
 	_ = godotenv.Load()
 	cfg := config.Load()
-
 	pool, err := db.NewPool(cfg.DatabaseURL)
 	if err != nil {
 		log.Fatalf("db connect failed: %v", err)
 	}
 	defer pool.Close()
-
 	ctx := context.Background()
 
 	if err := seedCategories(ctx, pool); err != nil {
-		log.Fatalf("seed failed: %v", err)
+		log.Fatalf("seed categories failed: %v", err)
 	}
-
+	if err := seedAdmin(ctx, pool); err != nil {
+		log.Fatalf("seed admin failed: %v", err)
+	}
 	fmt.Println("✅ Seed complete")
 }
 
@@ -53,5 +54,25 @@ func seedCategories(ctx context.Context, pool *pgxpool.Pool) error {
 		fmt.Printf("  → category: %s\n", c.Name)
 	}
 
+	return nil
+}
+
+func seedAdmin(ctx context.Context, pool *pgxpool.Pool) error {
+	email := "admin@cahayagading.com"
+	password := "admin123"
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	_, err = pool.Exec(ctx, `
+		INSERT INTO admins (email, password_hash)
+		VALUES ($1, $2)
+		ON CONFLICT (email) DO NOTHING
+	`, email, string(hash))
+	if err != nil {
+		return fmt.Errorf("insert admin: %w", err)
+	}
+	fmt.Printf("  → admin: %s\n", email)
 	return nil
 }
