@@ -35,11 +35,33 @@ func RequireAdminJWT(cfg JWTConfig) fiber.Handler {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid token claims"})
 		}
 
-		if claims["role"] != "admin" {
+		role, _ := claims["role"].(string)
+		if role != "admin" && role != "superadmin" {
 			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "forbidden"})
 		}
 
 		c.Locals("claims", claims)
 		return c.Next()
 	}
+}
+
+func RequireSuperAdmin(c *fiber.Ctx) error {
+	claims, ok := c.Locals("claims").(jwt.MapClaims)
+	if !ok {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "forbidden"})
+	}
+	role, _ := claims["role"].(string)
+	if role != "superadmin" {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "forbidden"})
+	}
+	return c.Next()
+}
+
+func RoleFromContext(c *fiber.Ctx) string {
+	claims, ok := c.Locals("claims").(jwt.MapClaims)
+	if !ok {
+		return ""
+	}
+	role, _ := claims["role"].(string)
+	return role
 }

@@ -10,8 +10,10 @@ import (
 	customerhandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/customer"
 	addrhandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/customer_address"
 	categoryhandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/customer_category"
+	dashboardhandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/dashboard"
 	payhandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/payment"
 	producthandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/product"
+	prodcathandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/product_category"
 	pricehandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/product_price"
 	trxhandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/transaction"
 	"github.com/riolentius/cahaya-gading-backend/internal/delivery/middleware"
@@ -19,16 +21,20 @@ import (
 	customerpg "github.com/riolentius/cahaya-gading-backend/internal/repository/postgres/customer"
 	addrpg "github.com/riolentius/cahaya-gading-backend/internal/repository/postgres/customer_address"
 	categorypg "github.com/riolentius/cahaya-gading-backend/internal/repository/postgres/customer_category"
+	dashpg "github.com/riolentius/cahaya-gading-backend/internal/repository/postgres/dashboard"
 	paypg "github.com/riolentius/cahaya-gading-backend/internal/repository/postgres/payment"
 	productpg "github.com/riolentius/cahaya-gading-backend/internal/repository/postgres/product"
+	prodcatpg "github.com/riolentius/cahaya-gading-backend/internal/repository/postgres/product_category"
 	pricepg "github.com/riolentius/cahaya-gading-backend/internal/repository/postgres/product_price"
 	trxpg "github.com/riolentius/cahaya-gading-backend/internal/repository/postgres/transaction"
 	authuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/auth"
 	customeruc "github.com/riolentius/cahaya-gading-backend/internal/usecase/customer"
 	addruc "github.com/riolentius/cahaya-gading-backend/internal/usecase/customer_address"
 	categoryuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/customer_category"
+	dashboarduc "github.com/riolentius/cahaya-gading-backend/internal/usecase/dashboard"
 	payuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/payment"
 	productuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/product"
+	prodcatuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/product_category"
 	priceuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/product_price"
 	txuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/transaction"
 )
@@ -55,6 +61,15 @@ func RegisterRoutes(app *fiber.App, cfg config.Config, db *pgxpool.Pool) {
 	admin.Get("/me", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"ok": true, "claims": c.Locals("claims")})
 	})
+
+	// ── Dashboard ─────────────────────────────────────────────
+	dashboardRepo := dashpg.NewDashboardRepo(db)
+	dashboardStore := dashpg.NewDashboardStoreAdapter(dashboardRepo)
+	dashboardUC := dashboarduc.New(dashboardStore)
+	dashboardH := dashboardhandler.New(dashboardUC)
+
+	admin.Get("/dashboard", dashboardH.GetSummary)
+	admin.Get("/dashboard/top-products", dashboardH.GetTopProducts)
 
 	// ── Customer Categories ───────────────────────────────────
 	categoryRepo := categorypg.NewCustomerCategoryRepo(db)
@@ -95,6 +110,16 @@ func RegisterRoutes(app *fiber.App, cfg config.Config, db *pgxpool.Pool) {
 	admin.Post("/products", productH.Create)
 	admin.Get("/products", productH.List)
 	admin.Patch("/products/:id", productH.Update)
+
+	// ── Product Categories ────────────────────────────────────
+	prodCatRepo := prodcatpg.NewProductCategoryRepo(db)
+	prodCatStore := prodcatpg.NewProductCategoryStoreAdapter(prodCatRepo)
+	prodCatUC := prodcatuc.New(prodCatStore)
+	prodCatH := prodcathandler.New(prodCatUC)
+
+	admin.Get("/product-categories", prodCatH.List)
+	admin.Post("/product-categories", prodCatH.Create)
+	admin.Patch("/product-categories/:id", prodCatH.Update)
 
 	// ── Product Prices ────────────────────────────────────────
 	priceRepo := pricepg.NewProductPriceRepo(db)
@@ -143,5 +168,6 @@ func (a *adminFinderAdapter) FindByEmail(ctx context.Context, email string) (*au
 		Email:        r.Email,
 		PasswordHash: r.PasswordHash,
 		IsActive:     r.IsActive,
+		Role:         r.Role,
 	}, nil
 }

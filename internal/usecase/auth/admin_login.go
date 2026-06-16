@@ -19,6 +19,7 @@ type Admin struct {
 	Email        string
 	PasswordHash string
 	IsActive     bool
+	Role         string
 }
 
 type AdminFinder interface {
@@ -67,7 +68,7 @@ func (u *AdminLoginUsecase) Execute(ctx context.Context, in LoginInput) (*LoginO
 	claims := jwt.MapClaims{
 		"sub":   admin.ID,
 		"email": admin.Email,
-		"role":  "admin",
+		"role":  admin.Role, // read from DB, not hardcoded
 		"iat":   now.Unix(),
 		"exp":   exp.Unix(),
 	}

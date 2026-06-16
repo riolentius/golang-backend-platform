@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/bcrypt"
 )
 
 func MustInsertCategory(t *testing.T, db *pgxpool.Pool, code, name string) string {
@@ -71,4 +72,32 @@ func MustInsertPrice(t *testing.T, db *pgxpool.Pool, productID string, categoryI
 	require.NoError(t, err)
 	require.NotEmpty(t, id)
 	return id
+}
+
+func seedAdmin(ctx context.Context, pool *pgxpool.Pool) error {
+	admins := []struct {
+		Email    string
+		Password string
+		Role     string
+	}{
+		{"admin@cahayagading.com", "admin123", "admin"},
+		{"superadmin@cahayagading.com", "superadmin123", "superadmin"},
+	}
+
+	for _, a := range admins {
+		hash, err := bcrypt.GenerateFromPassword([]byte(a.Password), bcrypt.DefaultCost)
+		if err != nil {
+			return err
+		}
+		_, err = pool.Exec(ctx, `
+            INSERT INTO admins (email, password_hash, role)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (email) DO NOTHING
+        `, a.Email, string(hash), a.Role)
+		if err != nil {
+			return fmt.Errorf("insert admin %s: %w", a.Email, err)
+		}
+		fmt.Printf("  → admin: %s (%s)\n", a.Email, a.Role)
+	}
+	return nil
 }

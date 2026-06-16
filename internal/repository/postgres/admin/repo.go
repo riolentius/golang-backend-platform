@@ -11,6 +11,7 @@ type AdminRow struct {
 	Email        string
 	PasswordHash string
 	IsActive     bool
+	Role         string
 }
 
 type AdminRepo struct {
@@ -23,7 +24,7 @@ func NewAdminRepo(db *pgxpool.Pool) *AdminRepo {
 
 func (r *AdminRepo) FindByEmail(ctx context.Context, email string) (*AdminRow, error) {
 	const q = `
-SELECT id::text, email, password_hash, is_active
+SELECT id::text, email, password_hash, is_active, role
 FROM admins
 WHERE email = $1
 LIMIT 1;
@@ -31,7 +32,7 @@ LIMIT 1;
 	row := r.db.QueryRow(ctx, q, email)
 
 	var out AdminRow
-	if err := row.Scan(&out.ID, &out.Email, &out.PasswordHash, &out.IsActive); err != nil {
+	if err := row.Scan(&out.ID, &out.Email, &out.PasswordHash, &out.IsActive, &out.Role); err != nil {
 		return nil, err
 	}
 	return &out, nil
