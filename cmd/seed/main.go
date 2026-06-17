@@ -58,21 +58,29 @@ func seedCategories(ctx context.Context, pool *pgxpool.Pool) error {
 }
 
 func seedAdmin(ctx context.Context, pool *pgxpool.Pool) error {
-	email := "admin@cahayagading.com"
-	password := "admin123"
+	admins := []struct {
+		Email    string
+		Password string
+		Role     string
+	}{
+		{"admin@cahayagading.com", "admin123", "admin"},
+		{"superadmin@cahayagading.com", "superadmin123", "superadmin"},
+	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		return err
+	for _, a := range admins {
+		hash, err := bcrypt.GenerateFromPassword([]byte(a.Password), bcrypt.DefaultCost)
+		if err != nil {
+			return err
+		}
+		_, err = pool.Exec(ctx, `
+            INSERT INTO admins (email, password_hash, role)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (email) DO NOTHING
+        `, a.Email, string(hash), a.Role)
+		if err != nil {
+			return fmt.Errorf("insert admin %s: %w", a.Email, err)
+		}
+		fmt.Printf("  → admin: %s (%s)\n", a.Email, a.Role)
 	}
-	_, err = pool.Exec(ctx, `
-		INSERT INTO admins (email, password_hash)
-		VALUES ($1, $2)
-		ON CONFLICT (email) DO NOTHING
-	`, email, string(hash))
-	if err != nil {
-		return fmt.Errorf("insert admin: %w", err)
-	}
-	fmt.Printf("  → admin: %s\n", email)
 	return nil
 }
