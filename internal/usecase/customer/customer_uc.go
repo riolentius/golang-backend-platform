@@ -31,16 +31,29 @@ func New(store Store) *Usecase {
 
 func (u *Usecase) Create(ctx context.Context, in CreateInput) (*Customer, error) {
 	in.FirstName = strings.TrimSpace(in.FirstName)
-	in.Email = strings.TrimSpace(strings.ToLower(in.Email))
+	in.Phone = strings.TrimSpace(in.Phone)
+	in.CategoryID = strings.TrimSpace(in.CategoryID)
 
-	if in.FirstName == "" || in.Email == "" || !strings.Contains(in.Email, "@") {
+	// Required in both flows: walk-in (transaction-inline) and B2B (Add Customer form).
+	if in.FirstName == "" || in.Phone == "" || in.CategoryID == "" {
 		return nil, ErrInvalidInput
 	}
 
-	// Optional: validate category UUID if provided
-	if in.CategoryID != nil && *in.CategoryID != "" {
-		if _, err := uuid.Parse(*in.CategoryID); err != nil {
+	if _, err := uuid.Parse(in.CategoryID); err != nil {
+		return nil, ErrInvalidInput
+	}
+
+	// Email is optional — walk-in customers usually won't have one.
+	// Normalize an explicit empty string to "no email" rather than rejecting it.
+	if in.Email != nil {
+		e := strings.TrimSpace(strings.ToLower(*in.Email))
+		switch {
+		case e == "":
+			in.Email = nil
+		case !strings.Contains(e, "@"):
 			return nil, ErrInvalidInput
+		default:
+			in.Email = &e
 		}
 	}
 
@@ -85,10 +98,25 @@ func (u *Usecase) Update(ctx context.Context, id string, in UpdateInput) (*Custo
 		in.FirstName = &f
 	}
 
-	if in.CategoryID != nil && *in.CategoryID != "" {
-		if _, err := uuid.Parse(*in.CategoryID); err != nil {
+	// Phone and CategoryID are required fields — if the request explicitly
+	// includes them, they must not be blanked out.
+	if in.Phone != nil {
+		p := strings.TrimSpace(*in.Phone)
+		if p == "" {
 			return nil, ErrInvalidInput
 		}
+		in.Phone = &p
+	}
+
+	if in.CategoryID != nil {
+		c := strings.TrimSpace(*in.CategoryID)
+		if c == "" {
+			return nil, ErrInvalidInput
+		}
+		if _, err := uuid.Parse(c); err != nil {
+			return nil, ErrInvalidInput
+		}
+		in.CategoryID = &c
 	}
 
 	return u.store.Update(ctx, id, in)

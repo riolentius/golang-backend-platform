@@ -34,7 +34,7 @@ func New() *App {
 	f.Use(cors.New(cors.Config{
 		AllowOrigins: "http://localhost:3000",
 		AllowHeaders: "Origin, Content-Type, Authorization",
-		AllowMethods: "GET, POST, PATCH, DELETE, OPTIONS",
+		AllowMethods: "GET, POST, PUT, PATCH, DELETE, OPTIONS",
 	}))
 
 	httpdelivery.RegisterRoutes(f, cfg, pool)

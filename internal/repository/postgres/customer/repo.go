@@ -15,7 +15,7 @@ type CustomerRow struct {
 	ID                   string
 	FirstName            string
 	LastName             *string
-	Email                string
+	Email                *string
 	Phone                *string
 	IdentificationNumber *string
 	CategoryID           *string

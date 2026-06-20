@@ -18,13 +18,16 @@ func NewCustomerStoreAdapter(repo *CustomerRepo) *CustomerStoreAdapter {
 }
 
 func (a *CustomerStoreAdapter) Create(ctx context.Context, in customeruc.CreateInput) (*customeruc.Customer, error) {
+	phone := in.Phone
+	categoryID := in.CategoryID
+
 	row, err := a.repo.Create(ctx, CustomerRow{
 		FirstName:            in.FirstName,
 		LastName:             in.LastName,
 		Email:                in.Email,
-		Phone:                in.Phone,
+		Phone:                &phone,
 		IdentificationNumber: in.IdentificationNumber,
-		CategoryID:           in.CategoryID,
+		CategoryID:           &categoryID,
 	})
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -64,10 +67,7 @@ func (a *CustomerStoreAdapter) Update(ctx context.Context, id string, in custome
 		rowIn.FirstName = *in.FirstName
 	}
 
-	if in.Email != nil {
-		rowIn.Email = *in.Email
-	}
-
+	rowIn.Email = in.Email
 	rowIn.LastName = in.LastName
 	rowIn.Phone = in.Phone
 	rowIn.IdentificationNumber = in.IdentificationNumber

@@ -84,6 +84,29 @@ func (h *Handler) Fulfill(c *fiber.Ctx) error {
 	return c.JSON(out)
 }
 
+func (h *Handler) UpdateItems(c *fiber.Ctx) error {
+	id := c.Params("id")
+	var in txuc.UpdateItemsInput
+	if err := c.BodyParser(&in); err != nil {
+		return apierr.BadRequest(c, apierr.CodeInvalidInput, "request body is not valid JSON")
+	}
+
+	out, err := h.uc.UpdateItems(c.Context(), id, in)
+	if err != nil {
+		return mapErr(c, err)
+	}
+	return c.JSON(out)
+}
+
+func (h *Handler) ListByCustomer(c *fiber.Ctx) error {
+	customerID := c.Params("id")
+	out, err := h.uc.ListByCustomer(c.Context(), customerID)
+	if err != nil {
+		return mapErr(c, err)
+	}
+	return c.JSON(out)
+}
+
 func mapErr(c *fiber.Ctx, err error) error {
 	switch {
 	case errors.Is(err, txuc.ErrInvalidInput):
@@ -95,6 +118,8 @@ func mapErr(c *fiber.Ctx, err error) error {
 		errors.Is(err, txuc.ErrTransactionMissing):
 		return apierr.NotFound(c, err.Error())
 	case errors.Is(err, txuc.ErrInvalidTransition):
+		return apierr.Conflict(c, apierr.CodeInvalidTransition, err.Error())
+	case errors.Is(err, txuc.ErrTransactionNotEditable):
 		return apierr.Conflict(c, apierr.CodeInvalidTransition, err.Error())
 	case errors.Is(err, txuc.ErrInsufficientStock):
 		return apierr.Conflict(c, apierr.CodeInsufficientStock, err.Error())

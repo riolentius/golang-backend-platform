@@ -143,6 +143,10 @@ func RegisterRoutes(app *fiber.App, cfg config.Config, db *pgxpool.Pool) {
 	admin.Get("/transactions/:id/view", trxH.GetViewByID)
 	admin.Post("/transactions/:id/fulfill", trxH.Fulfill)
 	admin.Patch("/transactions/:id/status", trxH.UpdateStatus)
+	admin.Put("/transactions/:id/items", trxH.UpdateItems)
+
+	// customer-scoped transaction history (used on the customer detail page)
+	admin.Get("/customers/:id/transactions", trxH.ListByCustomer)
 
 	// ── Payments ─────────────────────────────────────────────
 	paymentRepo := paypg.NewPaymentRepo(db)

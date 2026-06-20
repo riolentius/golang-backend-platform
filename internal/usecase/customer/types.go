@@ -6,7 +6,7 @@ type Customer struct {
 	ID                   string    `json:"id"`
 	FirstName            string    `json:"firstName"`
 	LastName             *string   `json:"lastName,omitempty"`
-	Email                string    `json:"email"`
+	Email                *string   `json:"email,omitempty"`
 	Phone                *string   `json:"phone,omitempty"`
 	IdentificationNumber *string   `json:"identificationNumber,omitempty"`
 	CategoryID           *string   `json:"categoryId,omitempty"`
@@ -17,10 +17,10 @@ type Customer struct {
 type CreateInput struct {
 	FirstName            string  `json:"firstName"`
 	LastName             *string `json:"lastName"`
-	Email                string  `json:"email"`
-	Phone                *string `json:"phone"`
+	Email                *string `json:"email"`
+	Phone                string  `json:"phone"`
 	IdentificationNumber *string `json:"identificationNumber"`
-	CategoryID           *string `json:"categoryId"`
+	CategoryID           string  `json:"categoryId"`
 }
 
 type UpdateInput struct {

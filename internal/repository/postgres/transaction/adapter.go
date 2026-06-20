@@ -45,6 +45,11 @@ func (a *TransactionStoreAdapter) Create(ctx context.Context, in trxuc.CreateInp
 		return nil, err
 	}
 
+	customerName, err := getCustomerName(ctx, tx, in.CustomerID)
+	if err != nil {
+		return nil, err
+	}
+
 	var (
 		items      []trxuc.Item
 		totalCents float64
@@ -106,15 +111,20 @@ func (a *TransactionStoreAdapter) Create(ctx context.Context, in trxuc.CreateInp
 	}
 
 	out := mapTrxRow(finalRow)
+	out.CustomerName = customerName
 	out.Items = items
 	return out, nil
 }
 
 func (a *TransactionStoreAdapter) List(ctx context.Context, in trxuc.ListInput) ([]trxuc.Transaction, error) {
 	const q = `
-SELECT id::text, customer_id::text, status, currency, total_amount::text, notes, created_at, updated_at
-FROM transactions
-ORDER BY created_at DESC
+SELECT
+  t.id::text, t.customer_id::text,
+  COALESCE(c.first_name,'') || CASE WHEN c.last_name IS NULL OR c.last_name='' THEN '' ELSE ' '||c.last_name END AS customer_name,
+  t.status, t.currency, t.total_amount::text, t.notes, t.created_at, t.updated_at
+FROM transactions t
+JOIN customers c ON c.id = t.customer_id
+ORDER BY t.created_at DESC
 LIMIT $1 OFFSET $2;
 `
 	rows, err := a.db.Query(ctx, q, in.Limit, in.Offset)
@@ -127,7 +137,7 @@ LIMIT $1 OFFSET $2;
 	for rows.Next() {
 		var row TransactionRow
 		if err := rows.Scan(
-			&row.ID, &row.CustomerID, &row.Status, &row.Currency,
+			&row.ID, &row.CustomerID, &row.CustomerName, &row.Status, &row.Currency,
 			&row.TotalAmount, &row.Notes, &row.CreatedAt, &row.UpdatedAt,
 		); err != nil {
 			return nil, err
@@ -139,13 +149,17 @@ LIMIT $1 OFFSET $2;
 
 func (a *TransactionStoreAdapter) GetByID(ctx context.Context, id string) (*trxuc.Transaction, error) {
 	const q = `
-SELECT id::text, customer_id::text, status, currency, total_amount::text, notes, created_at, updated_at
-FROM transactions
-WHERE id = $1::uuid;
+SELECT
+  t.id::text, t.customer_id::text,
+  COALESCE(c.first_name,'') || CASE WHEN c.last_name IS NULL OR c.last_name='' THEN '' ELSE ' '||c.last_name END AS customer_name,
+  t.status, t.currency, t.total_amount::text, t.notes, t.created_at, t.updated_at
+FROM transactions t
+JOIN customers c ON c.id = t.customer_id
+WHERE t.id = $1::uuid;
 `
 	var row TransactionRow
 	err := a.db.QueryRow(ctx, q, id).Scan(
-		&row.ID, &row.CustomerID, &row.Status, &row.Currency,
+		&row.ID, &row.CustomerID, &row.CustomerName, &row.Status, &row.Currency,
 		&row.TotalAmount, &row.Notes, &row.CreatedAt, &row.UpdatedAt,
 	)
 	if err != nil {
@@ -254,6 +268,109 @@ func (a *TransactionStoreAdapter) CustomerExists(ctx context.Context, customerID
 	return err == nil, err
 }
 
+func (a *TransactionStoreAdapter) UpdateItems(ctx context.Context, id string, items []trxuc.UpdateItemIn) (*trxuc.Transaction, error) {
+	tx, err := a.repo.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	status, customerID, err := lockTransactionRow(ctx, tx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, trxuc.ErrTransactionMissing
+		}
+		return nil, err
+	}
+
+	if status != trxuc.StatusDraft && status != trxuc.StatusPending {
+		return nil, trxuc.ErrTransactionNotEditable
+	}
+
+	// Stock was already reserved for this transaction if it's pending.
+	// Release the old reservation before rewriting items, then re-reserve
+	// against the new item list further down.
+	wasPending := status == trxuc.StatusPending
+	if wasPending {
+		if err := releaseStockForTx(ctx, tx, id); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := deleteTransactionItems(ctx, tx, id); err != nil {
+		return nil, err
+	}
+
+	customerCategoryID, err := getCustomerCategoryID(ctx, tx, customerID)
+	if err != nil {
+		return nil, err
+	}
+
+	customerName, err := getCustomerName(ctx, tx, customerID)
+	if err != nil {
+		return nil, err
+	}
+
+	var (
+		totalCents float64
+		currency   string
+	)
+
+	for _, it := range items {
+		if err := ensureProductExists(ctx, tx, it.ProductID); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, trxuc.ErrProductMissing
+			}
+			return nil, err
+		}
+
+		cur, unitStr, err := getEffectivePriceAmount(ctx, tx, it.ProductID, customerCategoryID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, trxuc.ErrPriceMissing
+			}
+			return nil, err
+		}
+
+		if currency == "" {
+			currency = cur
+		} else if currency != cur {
+			return nil, errors.New("multi-currency not supported")
+		}
+
+		unit, err := strconv.ParseFloat(unitStr, 64)
+		if err != nil {
+			return nil, err
+		}
+
+		line := unit * float64(it.Qty)
+		totalCents += line
+
+		if _, err := insertTransactionItem(ctx, tx, id, it.ProductID, it.Qty, unitStr, formatMoney(line)); err != nil {
+			return nil, err
+		}
+	}
+
+	finalRow, err := updateTransactionTotal(ctx, tx, id, currency, formatMoney(totalCents))
+	if err != nil {
+		return nil, err
+	}
+
+	if wasPending {
+		if err := reserveStockForTx(ctx, tx, id); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+
+	out := mapTrxRow(finalRow)
+	out.CustomerName = customerName
+	return out, nil
+}
+
 func (a *TransactionStoreAdapter) Fulfill(ctx context.Context, transactionID string) (*trxuc.Transaction, error) {
 	tx, err := a.repo.Begin(ctx)
 	if err != nil {
@@ -297,14 +414,15 @@ func (a *TransactionStoreAdapter) Fulfill(ctx context.Context, transactionID str
 
 func mapTrxRow(r *TransactionRow) *trxuc.Transaction {
 	return &trxuc.Transaction{
-		ID:          r.ID,
-		CustomerID:  r.CustomerID,
-		Status:      r.Status,
-		Currency:    r.Currency,
-		TotalAmount: r.TotalAmount,
-		Notes:       r.Notes,
-		CreatedAt:   mustTime(r.CreatedAt),
-		UpdatedAt:   mustTime(r.UpdatedAt),
+		ID:           r.ID,
+		CustomerID:   r.CustomerID,
+		CustomerName: r.CustomerName,
+		Status:       r.Status,
+		Currency:     r.Currency,
+		TotalAmount:  r.TotalAmount,
+		Notes:        r.Notes,
+		CreatedAt:    mustTime(r.CreatedAt),
+		UpdatedAt:    mustTime(r.UpdatedAt),
 	}
 }
 
@@ -405,3 +523,33 @@ func (a *TransactionStoreAdapter) CommitStockForTx(ctx context.Context, transact
 
 // Compile-time check
 var _ trxuc.Store = (*TransactionStoreAdapter)(nil)
+
+func (a *TransactionStoreAdapter) ListByCustomer(ctx context.Context, customerID string) (*trxuc.CustomerTransactionsResult, error) {
+	rows, err := a.repo.ListByCustomer(ctx, customerID)
+	if err != nil {
+		return nil, err
+	}
+
+	outstanding, err := a.repo.GetOutstandingTotalForCustomer(ctx, customerID)
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]trxuc.CustomerTransactionSummary, 0, len(rows))
+	for _, r := range rows {
+		items = append(items, trxuc.CustomerTransactionSummary{
+			ID:            r.ID,
+			Status:        r.Status,
+			TotalAmount:   r.TotalAmount,
+			PaidAmount:    r.PaidAmount,
+			BalanceDue:    r.BalanceDue,
+			PaymentStatus: r.PaymentStatus,
+			CreatedAt:     r.CreatedAt,
+		})
+	}
+
+	return &trxuc.CustomerTransactionsResult{
+		Items:            items,
+		TotalOutstanding: outstanding,
+	}, nil
+}

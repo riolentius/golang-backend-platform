@@ -28,6 +28,8 @@ type mockStore struct {
 	updateStatus      func(ctx context.Context, id string, status string) (*tx.Transaction, error)
 	getViewByID       func(ctx context.Context, id string) (*tx.TransactionView, error)
 	fulfill           func(ctx context.Context, id string) (*tx.Transaction, error)
+	updateItems       func(ctx context.Context, id string, items []tx.UpdateItemIn) (*tx.Transaction, error)
+	listByCustomer    func(ctx context.Context, customerID string) (*tx.CustomerTransactionsResult, error)
 }
 
 func (m *mockStore) CustomerExists(ctx context.Context, id string) (bool, error) {
@@ -123,6 +125,20 @@ func (m *mockStore) Fulfill(ctx context.Context, id string) (*tx.Transaction, er
 		return m.fulfill(ctx, id)
 	}
 	return &tx.Transaction{ID: id, Status: tx.StatusCompleted}, nil
+}
+
+func (m *mockStore) UpdateItems(ctx context.Context, id string, items []tx.UpdateItemIn) (*tx.Transaction, error) {
+	if m.updateItems != nil {
+		return m.updateItems(ctx, id, items)
+	}
+	return &tx.Transaction{ID: id}, nil
+}
+
+func (m *mockStore) ListByCustomer(ctx context.Context, customerID string) (*tx.CustomerTransactionsResult, error) {
+	if m.listByCustomer != nil {
+		return m.listByCustomer(ctx, customerID)
+	}
+	return &tx.CustomerTransactionsResult{Items: []tx.CustomerTransactionSummary{}, TotalOutstanding: "0.00"}, nil
 }
 
 // --- Helpers -------------------------------------------------------------
@@ -528,4 +544,147 @@ func TestFulfill_Success(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, fulfillCalled)
 	assert.Equal(t, tx.StatusCompleted, out.Status)
+}
+
+// --- UpdateItems Tests -----------------------------------------------------
+
+func validUpdateItem() tx.UpdateItemIn {
+	return tx.UpdateItemIn{ProductID: "prod-001", Qty: 1}
+}
+
+func TestUpdateItems_EmptyID(t *testing.T) {
+	uc := newUsecase(&mockStore{})
+	_, err := uc.UpdateItems(context.Background(), "", tx.UpdateItemsInput{
+		Items: []tx.UpdateItemIn{validUpdateItem()},
+	})
+	require.ErrorIs(t, err, tx.ErrInvalidInput)
+}
+
+func TestUpdateItems_NoItems(t *testing.T) {
+	uc := newUsecase(&mockStore{})
+	_, err := uc.UpdateItems(context.Background(), "tx-001", tx.UpdateItemsInput{
+		Items: []tx.UpdateItemIn{},
+	})
+	require.ErrorIs(t, err, tx.ErrInvalidInput)
+}
+
+func TestUpdateItems_ItemMissingProductID(t *testing.T) {
+	uc := newUsecase(&mockStore{})
+	_, err := uc.UpdateItems(context.Background(), "tx-001", tx.UpdateItemsInput{
+		Items: []tx.UpdateItemIn{{ProductID: "", Qty: 1}},
+	})
+	require.ErrorIs(t, err, tx.ErrInvalidInput)
+}
+
+func TestUpdateItems_ItemZeroQty(t *testing.T) {
+	uc := newUsecase(&mockStore{})
+	_, err := uc.UpdateItems(context.Background(), "tx-001", tx.UpdateItemsInput{
+		Items: []tx.UpdateItemIn{{ProductID: "prod-001", Qty: 0}},
+	})
+	require.ErrorIs(t, err, tx.ErrInvalidInput)
+}
+
+func TestUpdateItems_ItemNegativeQty(t *testing.T) {
+	uc := newUsecase(&mockStore{})
+	_, err := uc.UpdateItems(context.Background(), "tx-001", tx.UpdateItemsInput{
+		Items: []tx.UpdateItemIn{{ProductID: "prod-001", Qty: -3}},
+	})
+	require.ErrorIs(t, err, tx.ErrInvalidInput)
+}
+
+func TestUpdateItems_DelegatesToStore(t *testing.T) {
+	var capturedID string
+	var capturedItems []tx.UpdateItemIn
+	store := &mockStore{
+		updateItems: func(ctx context.Context, id string, items []tx.UpdateItemIn) (*tx.Transaction, error) {
+			capturedID = id
+			capturedItems = items
+			return &tx.Transaction{ID: id, Status: tx.StatusPending, TotalAmount: "150000.00"}, nil
+		},
+	}
+	uc := newUsecase(store)
+
+	items := []tx.UpdateItemIn{
+		{ProductID: "prod-001", Qty: 6},
+		{ProductID: "prod-002", Qty: 1},
+	}
+	out, err := uc.UpdateItems(context.Background(), "tx-001", tx.UpdateItemsInput{Items: items})
+
+	require.NoError(t, err)
+	assert.Equal(t, "tx-001", capturedID)
+	assert.Equal(t, items, capturedItems)
+	assert.Equal(t, "150000.00", out.TotalAmount)
+}
+
+func TestUpdateItems_StoreError_NotEditable(t *testing.T) {
+	store := &mockStore{
+		updateItems: func(ctx context.Context, id string, items []tx.UpdateItemIn) (*tx.Transaction, error) {
+			return nil, tx.ErrTransactionNotEditable
+		},
+	}
+	uc := newUsecase(store)
+
+	_, err := uc.UpdateItems(context.Background(), "tx-001", tx.UpdateItemsInput{
+		Items: []tx.UpdateItemIn{validUpdateItem()},
+	})
+	require.ErrorIs(t, err, tx.ErrTransactionNotEditable)
+}
+
+func TestUpdateItems_StoreError_InsufficientStock(t *testing.T) {
+	store := &mockStore{
+		updateItems: func(ctx context.Context, id string, items []tx.UpdateItemIn) (*tx.Transaction, error) {
+			return nil, tx.ErrInsufficientStock
+		},
+	}
+	uc := newUsecase(store)
+
+	_, err := uc.UpdateItems(context.Background(), "tx-001", tx.UpdateItemsInput{
+		Items: []tx.UpdateItemIn{{ProductID: "prod-001", Qty: 999}},
+	})
+	require.ErrorIs(t, err, tx.ErrInsufficientStock)
+}
+
+func TestUpdateItems_StoreError_ProductMissing(t *testing.T) {
+	store := &mockStore{
+		updateItems: func(ctx context.Context, id string, items []tx.UpdateItemIn) (*tx.Transaction, error) {
+			return nil, tx.ErrProductMissing
+		},
+	}
+	uc := newUsecase(store)
+
+	_, err := uc.UpdateItems(context.Background(), "tx-001", tx.UpdateItemsInput{
+		Items: []tx.UpdateItemIn{{ProductID: "ghost-prod", Qty: 1}},
+	})
+	require.ErrorIs(t, err, tx.ErrProductMissing)
+}
+
+// --- ListByCustomer Tests ---------------------------------------------------
+
+func TestListByCustomer_EmptyID(t *testing.T) {
+	uc := newUsecase(&mockStore{})
+	_, err := uc.ListByCustomer(context.Background(), "")
+	require.ErrorIs(t, err, tx.ErrInvalidInput)
+}
+
+func TestListByCustomer_DelegatesToStore(t *testing.T) {
+	var capturedID string
+	store := &mockStore{
+		listByCustomer: func(ctx context.Context, customerID string) (*tx.CustomerTransactionsResult, error) {
+			capturedID = customerID
+			return &tx.CustomerTransactionsResult{
+				Items: []tx.CustomerTransactionSummary{
+					{ID: "tx-001", Status: tx.StatusCompleted, TotalAmount: "76800.00", PaidAmount: "76800.00", BalanceDue: "0.00", PaymentStatus: "paid"},
+				},
+				TotalOutstanding: "350000.00",
+			}, nil
+		},
+	}
+	uc := newUsecase(store)
+
+	out, err := uc.ListByCustomer(context.Background(), "cust-001")
+	require.NoError(t, err)
+	assert.Equal(t, "cust-001", capturedID)
+	assert.Equal(t, "350000.00", out.TotalOutstanding)
+	require.Len(t, out.Items, 1)
+	assert.Equal(t, "tx-001", out.Items[0].ID)
 }

@@ -8,17 +8,18 @@ import (
 )
 
 var (
-	ErrInvalidInput        = errors.New("invalid input")
-	ErrCustomerMissing     = errors.New("customer not found")
-	ErrProductMissing      = errors.New("product not found")
-	ErrPriceMissing        = errors.New("product price not found")
-	ErrInsufficientStock   = errors.New("insufficient stock")
-	ErrInvalidStatus       = errors.New("invalid status")
-	ErrInvalidTransition   = errors.New("invalid status transition")
-	ErrAlreadyFulfilled    = errors.New("transaction already fulfilled")
-	ErrTransactionMissing  = errors.New("transaction not found")
-	ErrTransactionCanceled = errors.New("transaction cancelled")
-	ErrInvalidPackSize     = errors.New("invalid pack size")
+	ErrInvalidInput           = errors.New("invalid input")
+	ErrCustomerMissing        = errors.New("customer not found")
+	ErrProductMissing         = errors.New("product not found")
+	ErrPriceMissing           = errors.New("product price not found")
+	ErrInsufficientStock      = errors.New("insufficient stock")
+	ErrInvalidStatus          = errors.New("invalid status")
+	ErrInvalidTransition      = errors.New("invalid status transition")
+	ErrAlreadyFulfilled       = errors.New("transaction already fulfilled")
+	ErrTransactionMissing     = errors.New("transaction not found")
+	ErrTransactionCanceled    = errors.New("transaction cancelled")
+	ErrInvalidPackSize        = errors.New("invalid pack size")
+	ErrTransactionNotEditable = errors.New("transaction items can only be edited while draft or pending")
 )
 
 const (
@@ -50,6 +51,10 @@ type Store interface {
 
 	UpdateStatus(ctx context.Context, id string, status string) (*Transaction, error)
 	GetViewByID(ctx context.Context, id string) (*TransactionView, error)
+
+	UpdateItems(ctx context.Context, id string, items []UpdateItemIn) (*Transaction, error)
+
+	ListByCustomer(ctx context.Context, customerID string) (*CustomerTransactionsResult, error)
 
 	Fulfill(ctx context.Context, id string) (*Transaction, error)
 }
@@ -209,6 +214,25 @@ func (u *Usecase) Fulfill(ctx context.Context, id string) (*Transaction, error) 
 		return nil, ErrInvalidInput
 	}
 	return u.store.Fulfill(ctx, id)
+}
+
+func (u *Usecase) UpdateItems(ctx context.Context, id string, in UpdateItemsInput) (*Transaction, error) {
+	if id == "" || len(in.Items) == 0 {
+		return nil, ErrInvalidInput
+	}
+	for _, it := range in.Items {
+		if it.ProductID == "" || it.Qty <= 0 {
+			return nil, ErrInvalidInput
+		}
+	}
+	return u.store.UpdateItems(ctx, id, in.Items)
+}
+
+func (u *Usecase) ListByCustomer(ctx context.Context, customerID string) (*CustomerTransactionsResult, error) {
+	if customerID == "" {
+		return nil, ErrInvalidInput
+	}
+	return u.store.ListByCustomer(ctx, customerID)
 }
 
 func (u *Usecase) GetViewByID(ctx context.Context, id string) (*TransactionView, error) {
