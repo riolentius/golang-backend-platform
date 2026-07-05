@@ -65,3 +65,12 @@ func RoleFromContext(c *fiber.Ctx) string {
 	role, _ := claims["role"].(string)
 	return role
 }
+
+func EmailFromContext(c *fiber.Ctx) string {
+	claims, ok := c.Locals("claims").(jwt.MapClaims)
+	if !ok {
+		return ""
+	}
+	email, _ := claims["email"].(string)
+	return email
+}

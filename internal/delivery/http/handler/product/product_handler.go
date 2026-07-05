@@ -5,6 +5,7 @@ import (
 	"log"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/riolentius/cahaya-gading-backend/internal/delivery/middleware"
 	productuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/product"
 	"github.com/riolentius/cahaya-gading-backend/pkg/apierr"
 )
@@ -23,7 +24,8 @@ func (h *Handler) Create(c *fiber.Ctx) error {
 		return apierr.BadRequest(c, apierr.CodeInvalidInput, "request body is not valid JSON")
 	}
 
-	out, err := h.uc.Create(c.Context(), req)
+	email := emailPtr(c)
+	out, err := h.uc.Create(c.Context(), req, email)
 	if err != nil {
 		return mapErr(c, err)
 	}
@@ -49,11 +51,20 @@ func (h *Handler) Update(c *fiber.Ctx) error {
 		return apierr.BadRequest(c, apierr.CodeInvalidInput, "request body is not valid JSON")
 	}
 
-	out, err := h.uc.Update(c.Context(), id, req)
+	email := emailPtr(c)
+	out, err := h.uc.Update(c.Context(), id, req, email)
 	if err != nil {
 		return mapErr(c, err)
 	}
 	return c.JSON(out)
+}
+
+func emailPtr(c *fiber.Ctx) *string {
+	e := middleware.EmailFromContext(c)
+	if e == "" {
+		return nil
+	}
+	return &e
 }
 
 func mapErr(c *fiber.Ctx, err error) error {

@@ -22,8 +22,9 @@ func (a *ProductStoreAdapter) Create(
 	cost string,
 	stockOnHand int,
 	categoryID *string,
+	createdByEmail *string,
 ) (*productuc.Product, error) {
-	row, err := a.repo.Create(ctx, sku, name, description, cost, stockOnHand, categoryID)
+	row, err := a.repo.Create(ctx, sku, name, description, cost, stockOnHand, categoryID, createdByEmail)
 	if err != nil {
 		return nil, err
 	}
@@ -56,8 +57,9 @@ func (a *ProductStoreAdapter) Update(
 	isActive *bool,
 	stockOnHand *int,
 	categoryID *string,
+	createdByEmail *string,
 ) (*productuc.Product, error) {
-	row, err := a.repo.Update(ctx, id, sku, name, description, cost, isActive, stockOnHand, categoryID)
+	row, err := a.repo.Update(ctx, id, sku, name, description, cost, isActive, stockOnHand, categoryID, createdByEmail)
 	if err != nil {
 		return nil, err
 	}

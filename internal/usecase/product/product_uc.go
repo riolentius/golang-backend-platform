@@ -30,9 +30,9 @@ type Product struct {
 }
 
 type ProductStore interface {
-	Create(ctx context.Context, sku *string, name string, description *string, cost string, stockOnHand int, categoryID *string) (*Product, error)
+	Create(ctx context.Context, sku *string, name string, description *string, cost string, stockOnHand int, categoryID *string, createdByEmail *string) (*Product, error)
 	List(ctx context.Context, limit int, offset int) ([]Product, error)
-	Update(ctx context.Context, id string, sku *string, name *string, description *string, cost *string, isActive *bool, stockOnHand *int, categoryID *string) (*Product, error)
+	Update(ctx context.Context, id string, sku *string, name *string, description *string, cost *string, isActive *bool, stockOnHand *int, categoryID *string, createdByEmail *string) (*Product, error)
 }
 
 type Usecase struct {
@@ -52,7 +52,7 @@ type CreateInput struct {
 	CategoryID  *string `json:"categoryId"`
 }
 
-func (u *Usecase) Create(ctx context.Context, in CreateInput) (*Product, error) {
+func (u *Usecase) Create(ctx context.Context, in CreateInput, createdByEmail *string) (*Product, error) {
 	name := strings.TrimSpace(in.Name)
 	if name == "" {
 		return nil, ErrInvalidInput
@@ -71,7 +71,7 @@ func (u *Usecase) Create(ctx context.Context, in CreateInput) (*Product, error) 
 		stock = *in.StockOnHand
 	}
 
-	return u.store.Create(ctx, in.SKU, name, in.Description, cost, stock, in.CategoryID)
+	return u.store.Create(ctx, in.SKU, name, in.Description, cost, stock, in.CategoryID, createdByEmail)
 }
 
 func (u *Usecase) List(ctx context.Context, limit, offset int) ([]Product, error) {
@@ -94,7 +94,7 @@ type UpdateInput struct {
 	CategoryID  *string `json:"categoryId"`
 }
 
-func (u *Usecase) Update(ctx context.Context, id string, in UpdateInput) (*Product, error) {
+func (u *Usecase) Update(ctx context.Context, id string, in UpdateInput, createdByEmail *string) (*Product, error) {
 	if strings.TrimSpace(id) == "" {
 		return nil, ErrInvalidInput
 	}
@@ -108,5 +108,5 @@ func (u *Usecase) Update(ctx context.Context, id string, in UpdateInput) (*Produ
 	if in.StockOnHand != nil && *in.StockOnHand < 0 {
 		return nil, ErrInvalidInput
 	}
-	return u.store.Update(ctx, id, in.SKU, in.Name, in.Description, in.Cost, in.IsActive, in.StockOnHand, in.CategoryID)
+	return u.store.Update(ctx, id, in.SKU, in.Name, in.Description, in.Cost, in.IsActive, in.StockOnHand, in.CategoryID, createdByEmail)
 }

@@ -15,6 +15,7 @@ import (
 	producthandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/product"
 	prodcathandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/product_category"
 	pricehandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/product_price"
+	stockhandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/stock"
 	trxhandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/transaction"
 	"github.com/riolentius/cahaya-gading-backend/internal/delivery/middleware"
 	adminpg "github.com/riolentius/cahaya-gading-backend/internal/repository/postgres/admin"
@@ -26,6 +27,7 @@ import (
 	productpg "github.com/riolentius/cahaya-gading-backend/internal/repository/postgres/product"
 	prodcatpg "github.com/riolentius/cahaya-gading-backend/internal/repository/postgres/product_category"
 	pricepg "github.com/riolentius/cahaya-gading-backend/internal/repository/postgres/product_price"
+	stockpg "github.com/riolentius/cahaya-gading-backend/internal/repository/postgres/stock"
 	trxpg "github.com/riolentius/cahaya-gading-backend/internal/repository/postgres/transaction"
 	authuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/auth"
 	customeruc "github.com/riolentius/cahaya-gading-backend/internal/usecase/customer"
@@ -36,6 +38,7 @@ import (
 	productuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/product"
 	prodcatuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/product_category"
 	priceuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/product_price"
+	stockuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/stock"
 	txuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/transaction"
 )
 
@@ -110,6 +113,15 @@ func RegisterRoutes(app *fiber.App, cfg config.Config, db *pgxpool.Pool) {
 	admin.Post("/products", productH.Create)
 	admin.Get("/products", productH.List)
 	admin.Patch("/products/:id", productH.Update)
+
+	// ── Stock movements ────────────────────────────────────────
+	stockRepo := stockpg.NewStockRepo(db)
+	stockStore := stockpg.NewStockStoreAdapter(stockRepo)
+	stockUC := stockuc.New(stockStore)
+	stockH := stockhandler.New(stockUC)
+
+	admin.Post("/products/:id/stock-in", stockH.StockIn)
+	admin.Get("/products/:id/stock-movements", stockH.ListByProduct)
 
 	// ── Product Categories ────────────────────────────────────
 	prodCatRepo := prodcatpg.NewProductCategoryRepo(db)

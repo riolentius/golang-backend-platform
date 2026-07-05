@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -38,8 +39,15 @@ func (r *ProductRepo) Create(
 	cost string,
 	stockOnHand int,
 	categoryID *string,
+	createdByEmail *string,
 ) (*ProductRow, error) {
-	const q = `
+	tx, err := r.db.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	const insertQ = `
 WITH inserted AS (
   INSERT INTO products (sku, name, description, cost, stock_on_hand, category_id)
   VALUES ($1, $2, $3, $4, $5, $6::uuid)
@@ -54,12 +62,26 @@ FROM inserted i
 LEFT JOIN product_categories pc ON pc.id = i.category_id;
 `
 	var out ProductRow
-	if err := r.db.QueryRow(ctx, q, sku, name, description, cost, stockOnHand, categoryID).Scan(
+	if err := tx.QueryRow(ctx, insertQ, sku, name, description, cost, stockOnHand, categoryID).Scan(
 		&out.ID, &out.SKU, &out.Name, &out.Description, &out.Cost,
 		&out.IsActive, &out.StockOnHand, &out.StockReserved,
 		&out.CategoryID, &out.CategoryName,
 		&out.CreatedAt, &out.UpdatedAt,
 	); err != nil {
+		return nil, err
+	}
+
+	if stockOnHand > 0 {
+		const movQ = `
+INSERT INTO stock_movements (product_id, direction, quantity, source, created_by_email)
+VALUES ($1::uuid, 'in', $2, 'initial', $3);
+`
+		if _, err := tx.Exec(ctx, movQ, out.ID, stockOnHand, createdByEmail); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -109,8 +131,21 @@ func (r *ProductRepo) Update(
 	isActive *bool,
 	stockOnHand *int,
 	categoryID *string,
+	createdByEmail *string,
 ) (*ProductRow, error) {
-	const q = `
+	tx, err := r.db.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var oldStock int
+	const lockQ = `SELECT stock_on_hand FROM products WHERE id = $1::uuid FOR UPDATE;`
+	if err := tx.QueryRow(ctx, lockQ, id).Scan(&oldStock); err != nil {
+		return nil, err
+	}
+
+	const updateQ = `
 WITH updated AS (
   UPDATE products
   SET
@@ -134,7 +169,7 @@ FROM updated u
 LEFT JOIN product_categories pc ON pc.id = u.category_id;
 `
 	var out ProductRow
-	if err := r.db.QueryRow(ctx, q,
+	if err := tx.QueryRow(ctx, updateQ,
 		id, sku, name, description, cost, isActive, stockOnHand, categoryID,
 	).Scan(
 		&out.ID, &out.SKU, &out.Name, &out.Description, &out.Cost,
@@ -142,6 +177,29 @@ LEFT JOIN product_categories pc ON pc.id = u.category_id;
 		&out.CategoryID, &out.CategoryName,
 		&out.CreatedAt, &out.UpdatedAt,
 	); err != nil {
+		return nil, err
+	}
+
+	if stockOnHand != nil {
+		delta := out.StockOnHand - oldStock
+		if delta != 0 {
+			direction := "in"
+			qty := delta
+			if delta < 0 {
+				direction = "out"
+				qty = -delta
+			}
+			const movQ = `
+INSERT INTO stock_movements (product_id, direction, quantity, source, created_by_email)
+VALUES ($1::uuid, $2, $3, 'adjustment', $4);
+`
+			if _, err := tx.Exec(ctx, movQ, out.ID, direction, qty, createdByEmail); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
 	return &out, nil

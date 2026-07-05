@@ -414,6 +414,51 @@ WHERE id = $1::uuid;
 		}
 	}
 
+	if err := recordStockOutForTx(ctx, tx, transactionID); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func recordStockOutForTx(ctx context.Context, tx pgx.Tx, transactionID string) error {
+	const selectQ = `
+SELECT product_id::text, qty
+FROM transaction_items
+WHERE transaction_id = $1::uuid;
+`
+	rows, err := tx.Query(ctx, selectQ, transactionID)
+	if err != nil {
+		return err
+	}
+
+	type soldItem struct {
+		productID string
+		qty       int
+	}
+	items := make([]soldItem, 0, 10)
+	for rows.Next() {
+		var it soldItem
+		if err := rows.Scan(&it.productID, &it.qty); err != nil {
+			rows.Close()
+			return err
+		}
+		items = append(items, it)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	const insertQ = `
+INSERT INTO stock_movements (product_id, direction, quantity, source, reference_id)
+VALUES ($1::uuid, 'out', $2, 'transaction', $3::uuid);
+`
+	for _, it := range items {
+		if _, err := tx.Exec(ctx, insertQ, it.productID, it.qty, transactionID); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
