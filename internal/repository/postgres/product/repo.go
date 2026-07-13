@@ -95,6 +95,7 @@ type ProductListFilter struct {
 	Status string // "active" | "inactive" | ""
 	Limit  int
 	Offset int
+	Sort   string // "alphabet" | "newest" | "oldest"
 }
 
 // List returns a filtered, paginated page of products plus the total count of
@@ -139,7 +140,10 @@ SELECT
 FROM products p
 LEFT JOIN product_categories pc ON pc.id = p.category_id
 ` + where + `
-ORDER BY p.created_at DESC
+ORDER BY 
+  CASE WHEN $5 = 'alphabet' THEN p.name END,
+  CASE WHEN $5 = 'newest' THEN p.created_at END DESC,
+  CASE WHEN $5 = 'oldest' THEN p.created_at END
 LIMIT $3 OFFSET $4;
 `
 	rows, err := r.db.Query(ctx, q, search, activeFilter, f.Limit, f.Offset)

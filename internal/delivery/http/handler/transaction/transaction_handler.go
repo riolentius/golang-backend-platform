@@ -34,7 +34,9 @@ func (h *Handler) List(c *fiber.Ctx) error {
 		Limit:  c.QueryInt("limit", 50),
 		Offset: c.QueryInt("offset", 0),
 		Search: c.Query("search"),
+		Sort:   c.Query("sort", "alphabet"),
 	}
+
 	if s := c.Query("status"); s != "" {
 		in.Status = &s
 	}
@@ -43,7 +45,11 @@ func (h *Handler) List(c *fiber.Ctx) error {
 	if err != nil {
 		return mapErr(c, err)
 	}
-	return c.JSON(fiber.Map{"items": out.Items, "total": out.Total})
+
+	return c.JSON(fiber.Map{
+		"items": out.Items,
+		"total": out.Total,
+	})
 }
 
 func (h *Handler) GetByID(c *fiber.Ctx) error {

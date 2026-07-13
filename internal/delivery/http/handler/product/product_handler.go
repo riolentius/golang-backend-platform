@@ -38,6 +38,7 @@ func (h *Handler) List(c *fiber.Ctx) error {
 		Status: c.Query("status"),
 		Limit:  c.QueryInt("limit", 20),
 		Offset: c.QueryInt("offset", 0),
+		Sort:   c.Query("sort", "alphabet"),
 	}
 
 	out, err := h.uc.List(c.Context(), params)

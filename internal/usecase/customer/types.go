@@ -36,6 +36,7 @@ type ListQuery struct {
 	Search string // matches first_name, last_name, or phone; "" = no filter
 	Limit  int
 	Offset int
+	Sort   string // "alphabet" | "newest" | "oldest"
 }
 
 // ListResult is the page of customers plus the total count matching the filter.

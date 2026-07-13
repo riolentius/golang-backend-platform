@@ -9,6 +9,7 @@ import (
 var (
 	ErrInvalidInput = errors.New("invalid input")
 	ErrNotFound     = errors.New("product not found")
+	ErrSortInvalid  = errors.New("invalid sort")
 )
 
 // ProductCategory is embedded in Product responses.
@@ -35,6 +36,7 @@ type ListParams struct {
 	Status string // "active" | "inactive" | "" (all)
 	Limit  int
 	Offset int
+	Sort   string // "alphabet" | "newest" | "oldest"
 }
 
 // ListResult carries the page of items plus the total count of all rows that
@@ -109,6 +111,12 @@ func (u *Usecase) List(ctx context.Context, p ListParams) (*ListResult, error) {
 		// keep
 	default:
 		p.Status = ""
+	}
+
+	switch p.Sort {
+	case "alphabet", "newest", "oldest":
+	default:
+		return nil, ErrSortInvalid
 	}
 
 	items, total, err := u.store.List(ctx, p)

@@ -50,7 +50,7 @@ func (a *CustomerStoreAdapter) GetByID(ctx context.Context, id string) (*custome
 }
 
 func (a *CustomerStoreAdapter) List(ctx context.Context, q customeruc.ListQuery) (*customeruc.ListResult, error) {
-	rows, total, err := a.repo.List(ctx, q.Search, q.Limit, q.Offset)
+	rows, total, err := a.repo.List(ctx, q.Search, q.Limit, q.Offset, q.Sort)
 	if err != nil {
 		return nil, err
 	}

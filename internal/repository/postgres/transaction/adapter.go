@@ -118,7 +118,6 @@ func (a *TransactionStoreAdapter) Create(ctx context.Context, in trxuc.CreateInp
 }
 
 func (a *TransactionStoreAdapter) List(ctx context.Context, in trxuc.ListInput) (*trxuc.ListResult, error) {
-	// nullable filters: status and search both no-op when nil.
 	var status *string
 	if in.Status != nil {
 		if s := strings.TrimSpace(*in.Status); s != "" {
@@ -131,8 +130,6 @@ func (a *TransactionStoreAdapter) List(ctx context.Context, in trxuc.ListInput) 
 		search = &pat
 	}
 
-	// customer_name is a computed expression, so search matches the id text or the
-	// concatenated name. Shared WHERE for both the count and the page query.
 	const where = `
 FROM transactions t
 JOIN customers c ON c.id = t.customer_id
@@ -153,10 +150,24 @@ SELECT
   COALESCE(c.first_name,'') || CASE WHEN c.last_name IS NULL OR c.last_name='' THEN '' ELSE ' '||c.last_name END AS customer_name,
   t.status, t.currency, t.total_amount::text, t.notes, t.created_at, t.updated_at
 `
+
+	orderBy := `
+ORDER BY
+  COALESCE(c.first_name,'') || CASE WHEN c.last_name IS NULL OR c.last_name='' THEN '' ELSE ' '||c.last_name END ASC
+`
+
+	switch in.Sort {
+	case "newest":
+		orderBy = `ORDER BY t.created_at DESC`
+	case "oldest":
+		orderBy = `ORDER BY t.created_at ASC`
+	}
+
 	q := cols + where + `
-ORDER BY t.created_at DESC
+` + orderBy + `
 LIMIT $3 OFFSET $4;
 `
+
 	rows, err := a.db.Query(ctx, q, status, search, in.Limit, in.Offset)
 	if err != nil {
 		return nil, err

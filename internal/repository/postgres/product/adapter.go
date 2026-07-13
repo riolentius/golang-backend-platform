@@ -42,6 +42,7 @@ func (a *ProductStoreAdapter) List(
 		Status: p.Status,
 		Limit:  p.Limit,
 		Offset: p.Offset,
+		Sort:   p.Sort,
 	})
 	if err != nil {
 		return nil, 0, err

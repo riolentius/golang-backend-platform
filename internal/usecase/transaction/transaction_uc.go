@@ -21,6 +21,7 @@ var (
 	ErrTransactionCanceled    = errors.New("transaction cancelled")
 	ErrInvalidPackSize        = errors.New("invalid pack size")
 	ErrTransactionNotEditable = errors.New("transaction items can only be edited while draft or pending")
+	ErrInvalidSort            = errors.New("invalid sort")
 )
 
 const (
@@ -165,7 +166,19 @@ func (u *Usecase) List(ctx context.Context, in ListInput) (*ListResult, error) {
 	if in.Offset < 0 {
 		in.Offset = 0
 	}
+
 	in.Search = strings.TrimSpace(in.Search)
+
+	if in.Sort == "" {
+		in.Sort = "alphabet"
+	}
+
+	switch in.Sort {
+	case "alphabet", "newest", "oldest":
+	default:
+		return nil, ErrInvalidSort
+	}
+
 	return u.store.List(ctx, in)
 }
 

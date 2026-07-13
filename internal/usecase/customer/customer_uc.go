@@ -75,6 +75,7 @@ func (u *Usecase) List(ctx context.Context, q ListQuery) (*ListResult, error) {
 		q.Offset = 0
 	}
 	q.Search = strings.TrimSpace(q.Search)
+	q.Sort = strings.TrimSpace(q.Sort)
 	return u.store.List(ctx, q)
 }
 

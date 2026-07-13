@@ -42,7 +42,8 @@ type ListInput struct {
 	Limit  int
 	Offset int
 	Status *string
-	Search string // matches transaction id or customer name; "" = no filter
+	Search string
+	Sort   string // "alphabet" | "newest" | "oldest"
 }
 
 // ListResult is the page of transactions plus the total count matching the filter.

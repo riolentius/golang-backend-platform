@@ -34,6 +34,7 @@ func (h *Handler) List(c *fiber.Ctx) error {
 		Search: c.Query("search"),
 		Limit:  c.QueryInt("limit", 50),
 		Offset: c.QueryInt("offset", 0),
+		Sort:   c.Query("sort", "alphabet"),
 	})
 	if err != nil {
 		return mapErr(c, err)

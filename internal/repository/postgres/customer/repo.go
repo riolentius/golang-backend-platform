@@ -98,7 +98,7 @@ LIMIT 1;
 	return &out, nil
 }
 
-func (r *CustomerRepo) List(ctx context.Context, search string, limit, offset int) ([]CustomerRow, int, error) {
+func (r *CustomerRepo) List(ctx context.Context, search string, limit, offset int, sort string) ([]CustomerRow, int, error) {
 	// nullable search: NULL when empty → ILIKE condition short-circuits to TRUE.
 	var searchPtr *string
 	if s := strings.TrimSpace(search); s != "" {
@@ -123,10 +123,13 @@ SELECT
   id::text, first_name, last_name, email, phone, identification_number, category_id, created_at, updated_at
 FROM customers
 ` + where + `
-ORDER BY created_at DESC
+ORDER BY 
+  CASE WHEN $4 = 'alphabet' THEN first_name END,
+  CASE WHEN $4 = 'newest' THEN created_at END DESC,
+  CASE WHEN $4 = 'oldest' THEN created_at END
 LIMIT $2 OFFSET $3;
 `
-	rows, err := r.db.Query(ctx, q, searchPtr, limit, offset)
+	rows, err := r.db.Query(ctx, q, searchPtr, limit, offset, sort)
 	if err != nil {
 		return nil, 0, err
 	}
