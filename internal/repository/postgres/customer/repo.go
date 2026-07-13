@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -97,17 +98,37 @@ LIMIT 1;
 	return &out, nil
 }
 
-func (r *CustomerRepo) List(ctx context.Context, limit, offset int) ([]CustomerRow, error) {
+func (r *CustomerRepo) List(ctx context.Context, search string, limit, offset int) ([]CustomerRow, int, error) {
+	// nullable search: NULL when empty → ILIKE condition short-circuits to TRUE.
+	var searchPtr *string
+	if s := strings.TrimSpace(search); s != "" {
+		pat := "%" + s + "%"
+		searchPtr = &pat
+	}
+
+	const where = `
+WHERE ($1::text IS NULL
+   OR first_name ILIKE $1
+   OR last_name  ILIKE $1
+   OR phone      ILIKE $1)
+`
+
+	var total int
+	if err := r.db.QueryRow(ctx, `SELECT count(*) FROM customers`+where, searchPtr).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
 	const q = `
 SELECT
   id::text, first_name, last_name, email, phone, identification_number, category_id, created_at, updated_at
 FROM customers
+` + where + `
 ORDER BY created_at DESC
-LIMIT $1 OFFSET $2;
+LIMIT $2 OFFSET $3;
 `
-	rows, err := r.db.Query(ctx, q, limit, offset)
+	rows, err := r.db.Query(ctx, q, searchPtr, limit, offset)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 
@@ -125,11 +146,11 @@ LIMIT $1 OFFSET $2;
 			&c.CreatedAt,
 			&c.UpdatedAt,
 		); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		out = append(out, c)
 	}
-	return out, rows.Err()
+	return out, total, rows.Err()
 }
 
 func (r *CustomerRepo) Update(ctx context.Context, id string, in CustomerRow) (*CustomerRow, error) {

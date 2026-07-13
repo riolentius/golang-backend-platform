@@ -49,16 +49,16 @@ func (a *CustomerStoreAdapter) GetByID(ctx context.Context, id string) (*custome
 	return mapCustomer(row), nil
 }
 
-func (a *CustomerStoreAdapter) List(ctx context.Context, q customeruc.ListQuery) ([]customeruc.Customer, error) {
-	rows, err := a.repo.List(ctx, q.Limit, q.Offset)
+func (a *CustomerStoreAdapter) List(ctx context.Context, q customeruc.ListQuery) (*customeruc.ListResult, error) {
+	rows, total, err := a.repo.List(ctx, q.Search, q.Limit, q.Offset)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]customeruc.Customer, 0, len(rows))
+	items := make([]customeruc.Customer, 0, len(rows))
 	for i := range rows {
-		out = append(out, *mapCustomer(&rows[i]))
+		items = append(items, *mapCustomer(&rows[i]))
 	}
-	return out, nil
+	return &customeruc.ListResult{Items: items, Total: total}, nil
 }
 
 func (a *CustomerStoreAdapter) Update(ctx context.Context, id string, in customeruc.UpdateInput) (*customeruc.Customer, error) {

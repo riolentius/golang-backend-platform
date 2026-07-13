@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -116,24 +117,53 @@ func (a *TransactionStoreAdapter) Create(ctx context.Context, in trxuc.CreateInp
 	return out, nil
 }
 
-func (a *TransactionStoreAdapter) List(ctx context.Context, in trxuc.ListInput) ([]trxuc.Transaction, error) {
-	const q = `
+func (a *TransactionStoreAdapter) List(ctx context.Context, in trxuc.ListInput) (*trxuc.ListResult, error) {
+	// nullable filters: status and search both no-op when nil.
+	var status *string
+	if in.Status != nil {
+		if s := strings.TrimSpace(*in.Status); s != "" {
+			status = &s
+		}
+	}
+	var search *string
+	if s := strings.TrimSpace(in.Search); s != "" {
+		pat := "%" + s + "%"
+		search = &pat
+	}
+
+	// customer_name is a computed expression, so search matches the id text or the
+	// concatenated name. Shared WHERE for both the count and the page query.
+	const where = `
+FROM transactions t
+JOIN customers c ON c.id = t.customer_id
+WHERE ($1::text IS NULL OR t.status = $1)
+  AND ($2::text IS NULL
+    OR t.id::text ILIKE $2
+    OR (COALESCE(c.first_name,'') || CASE WHEN c.last_name IS NULL OR c.last_name='' THEN '' ELSE ' '||c.last_name END) ILIKE $2)
+`
+
+	var total int
+	if err := a.db.QueryRow(ctx, `SELECT count(*) `+where, status, search).Scan(&total); err != nil {
+		return nil, err
+	}
+
+	const cols = `
 SELECT
   t.id::text, t.customer_id::text,
   COALESCE(c.first_name,'') || CASE WHEN c.last_name IS NULL OR c.last_name='' THEN '' ELSE ' '||c.last_name END AS customer_name,
   t.status, t.currency, t.total_amount::text, t.notes, t.created_at, t.updated_at
-FROM transactions t
-JOIN customers c ON c.id = t.customer_id
-ORDER BY t.created_at DESC
-LIMIT $1 OFFSET $2;
 `
-	rows, err := a.db.Query(ctx, q, in.Limit, in.Offset)
+	q := cols + where + `
+ORDER BY t.created_at DESC
+LIMIT $3 OFFSET $4;
+`
+	rows, err := a.db.Query(ctx, q, status, search, in.Limit, in.Offset)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	out := make([]trxuc.Transaction, 0)
+	items := make([]trxuc.Transaction, 0)
 	for rows.Next() {
 		var row TransactionRow
 		if err := rows.Scan(
@@ -142,9 +172,12 @@ LIMIT $1 OFFSET $2;
 		); err != nil {
 			return nil, err
 		}
-		out = append(out, *mapTrxRow(&row))
+		items = append(items, *mapTrxRow(&row))
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return &trxuc.ListResult{Items: items, Total: total}, nil
 }
 
 func (a *TransactionStoreAdapter) GetByID(ctx context.Context, id string) (*trxuc.Transaction, error) {

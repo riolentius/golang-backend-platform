@@ -30,17 +30,20 @@ func (h *Handler) Create(c *fiber.Ctx) error {
 }
 
 func (h *Handler) List(c *fiber.Ctx) error {
-	limit := c.QueryInt("limit", 50)
-	offset := c.QueryInt("offset", 0)
+	in := txuc.ListInput{
+		Limit:  c.QueryInt("limit", 50),
+		Offset: c.QueryInt("offset", 0),
+		Search: c.Query("search"),
+	}
+	if s := c.Query("status"); s != "" {
+		in.Status = &s
+	}
 
-	out, err := h.uc.List(c.Context(), txuc.ListInput{
-		Limit:  limit,
-		Offset: offset,
-	})
+	out, err := h.uc.List(c.Context(), in)
 	if err != nil {
 		return mapErr(c, err)
 	}
-	return c.JSON(fiber.Map{"items": out})
+	return c.JSON(fiber.Map{"items": out.Items, "total": out.Total})
 }
 
 func (h *Handler) GetByID(c *fiber.Ctx) error {

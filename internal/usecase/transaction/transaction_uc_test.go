@@ -20,7 +20,7 @@ type mockStore struct {
 	getStockRule      func(ctx context.Context, productID string) (string, float64, error)
 	getAvailableStock func(ctx context.Context, stockProductID string) (int, error)
 	create            func(ctx context.Context, in tx.CreateInput) (*tx.Transaction, error)
-	list              func(ctx context.Context, in tx.ListInput) ([]tx.Transaction, error)
+	list              func(ctx context.Context, in tx.ListInput) (*tx.ListResult, error)
 	getByID           func(ctx context.Context, id string) (*tx.Transaction, error)
 	reserveStock      func(ctx context.Context, txID string) error
 	releaseStock      func(ctx context.Context, txID string) error
@@ -71,11 +71,11 @@ func (m *mockStore) Create(ctx context.Context, in tx.CreateInput) (*tx.Transact
 	}, nil
 }
 
-func (m *mockStore) List(ctx context.Context, in tx.ListInput) ([]tx.Transaction, error) {
+func (m *mockStore) List(ctx context.Context, in tx.ListInput) (*tx.ListResult, error) {
 	if m.list != nil {
 		return m.list(ctx, in)
 	}
-	return []tx.Transaction{}, nil
+	return &tx.ListResult{Items: []tx.Transaction{}, Total: 0}, nil
 }
 
 func (m *mockStore) GetByID(ctx context.Context, id string) (*tx.Transaction, error) {
@@ -479,9 +479,9 @@ func TestUpdateStatus_PendingToCompleted_CommitsStock(t *testing.T) {
 func TestList_ClampsLimitAndOffset(t *testing.T) {
 	var capturedInput tx.ListInput
 	store := &mockStore{
-		list: func(ctx context.Context, in tx.ListInput) ([]tx.Transaction, error) {
+		list: func(ctx context.Context, in tx.ListInput) (*tx.ListResult, error) {
 			capturedInput = in
-			return []tx.Transaction{}, nil
+			return &tx.ListResult{Items: []tx.Transaction{}, Total: 0}, nil
 		},
 	}
 	uc := newUsecase(store)
@@ -496,16 +496,16 @@ func TestList_ClampsLimitAndOffset(t *testing.T) {
 func TestList_ClampsExcessiveLimit(t *testing.T) {
 	var capturedInput tx.ListInput
 	store := &mockStore{
-		list: func(ctx context.Context, in tx.ListInput) ([]tx.Transaction, error) {
+		list: func(ctx context.Context, in tx.ListInput) (*tx.ListResult, error) {
 			capturedInput = in
-			return []tx.Transaction{}, nil
+			return &tx.ListResult{Items: []tx.Transaction{}, Total: 0}, nil
 		},
 	}
 	uc := newUsecase(store)
 
 	_, err := uc.List(context.Background(), tx.ListInput{Limit: 9999, Offset: 0})
 	require.NoError(t, err)
-	assert.Equal(t, 20, capturedInput.Limit, "limit > 100 should clamp to default 20")
+	assert.Equal(t, 20, capturedInput.Limit, "limit > 200 should clamp to default 20")
 }
 
 // --- GetByID / GetViewByID Tests -----------------------------------------

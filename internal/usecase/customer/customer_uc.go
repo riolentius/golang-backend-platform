@@ -17,7 +17,7 @@ var (
 type Store interface {
 	Create(ctx context.Context, in CreateInput) (*Customer, error)
 	GetByID(ctx context.Context, id string) (*Customer, error)
-	List(ctx context.Context, q ListQuery) ([]Customer, error)
+	List(ctx context.Context, q ListQuery) (*ListResult, error)
 	Update(ctx context.Context, id string, in UpdateInput) (*Customer, error)
 }
 
@@ -67,13 +67,14 @@ func (u *Usecase) GetByID(ctx context.Context, id string) (*Customer, error) {
 	return u.store.GetByID(ctx, id)
 }
 
-func (u *Usecase) List(ctx context.Context, q ListQuery) ([]Customer, error) {
+func (u *Usecase) List(ctx context.Context, q ListQuery) (*ListResult, error) {
 	if q.Limit <= 0 || q.Limit > 200 {
 		q.Limit = 50
 	}
 	if q.Offset < 0 {
 		q.Offset = 0
 	}
+	q.Search = strings.TrimSpace(q.Search)
 	return u.store.List(ctx, q)
 }
 

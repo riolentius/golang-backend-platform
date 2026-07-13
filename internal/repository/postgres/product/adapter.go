@@ -33,18 +33,22 @@ func (a *ProductStoreAdapter) Create(
 
 func (a *ProductStoreAdapter) List(
 	ctx context.Context,
-	limit int,
-	offset int,
-) ([]productuc.Product, error) {
-	rows, err := a.repo.List(ctx, limit, offset)
+	p productuc.ListParams,
+) ([]productuc.Product, int, error) {
+	rows, total, err := a.repo.List(ctx, ProductListFilter{
+		Search: p.Search,
+		Status: p.Status,
+		Limit:  p.Limit,
+		Offset: p.Offset,
+	})
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	out := make([]productuc.Product, 0, len(rows))
 	for i := range rows {
 		out = append(out, *mapProductRowToUC(&rows[i]))
 	}
-	return out, nil
+	return out, total, nil
 }
 
 func (a *ProductStoreAdapter) Update(

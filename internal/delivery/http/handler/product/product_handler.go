@@ -33,15 +33,19 @@ func (h *Handler) Create(c *fiber.Ctx) error {
 }
 
 func (h *Handler) List(c *fiber.Ctx) error {
-	limit := c.QueryInt("limit", 20)
-	offset := c.QueryInt("offset", 0)
+	params := productuc.ListParams{
+		Search: c.Query("search"),
+		Status: c.Query("status"),
+		Limit:  c.QueryInt("limit", 20),
+		Offset: c.QueryInt("offset", 0),
+	}
 
-	out, err := h.uc.List(c.Context(), limit, offset)
+	out, err := h.uc.List(c.Context(), params)
 	if err != nil {
 		log.Printf("[product.list] unexpected error: %v", err)
 		return apierr.Internal(c)
 	}
-	return c.JSON(fiber.Map{"items": out})
+	return c.JSON(fiber.Map{"items": out.Items, "total": out.Total})
 }
 
 func (h *Handler) Update(c *fiber.Ctx) error {

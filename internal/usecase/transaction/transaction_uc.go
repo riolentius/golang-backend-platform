@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 )
 
 var (
@@ -42,7 +43,7 @@ type Store interface {
 	GetAvailableStock(ctx context.Context, stockProductID string) (int, error)
 
 	Create(ctx context.Context, in CreateInput) (*Transaction, error)
-	List(ctx context.Context, in ListInput) ([]Transaction, error)
+	List(ctx context.Context, in ListInput) (*ListResult, error)
 	GetByID(ctx context.Context, id string) (*Transaction, error)
 
 	ReserveStockForTx(ctx context.Context, txID string) error
@@ -157,13 +158,14 @@ func (u *Usecase) Create(ctx context.Context, in CreateInput) (*Transaction, err
 	return tx, nil
 }
 
-func (u *Usecase) List(ctx context.Context, in ListInput) ([]Transaction, error) {
-	if in.Limit <= 0 || in.Limit > 100 {
+func (u *Usecase) List(ctx context.Context, in ListInput) (*ListResult, error) {
+	if in.Limit <= 0 || in.Limit > 200 {
 		in.Limit = 20
 	}
 	if in.Offset < 0 {
 		in.Offset = 0
 	}
+	in.Search = strings.TrimSpace(in.Search)
 	return u.store.List(ctx, in)
 }
 

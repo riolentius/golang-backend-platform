@@ -42,6 +42,13 @@ type ListInput struct {
 	Limit  int
 	Offset int
 	Status *string
+	Search string // matches transaction id or customer name; "" = no filter
+}
+
+// ListResult is the page of transactions plus the total count matching the filter.
+type ListResult struct {
+	Items []Transaction `json:"items"`
+	Total int           `json:"total"`
 }
 
 type UpdateStatusInput struct {

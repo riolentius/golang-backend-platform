@@ -33,6 +33,13 @@ type UpdateInput struct {
 }
 
 type ListQuery struct {
+	Search string // matches first_name, last_name, or phone; "" = no filter
 	Limit  int
 	Offset int
+}
+
+// ListResult is the page of customers plus the total count matching the filter.
+type ListResult struct {
+	Items []Customer `json:"items"`
+	Total int        `json:"total"`
 }

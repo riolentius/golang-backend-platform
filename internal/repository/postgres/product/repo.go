@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -87,7 +88,48 @@ VALUES ($1::uuid, 'in', $2, 'initial', $3);
 	return &out, nil
 }
 
-func (r *ProductRepo) List(ctx context.Context, limit int, offset int) ([]ProductRow, error) {
+// ProductListFilter mirrors product.ListParams without importing the usecase
+// package (avoids an import cycle — repo is downstream of usecase).
+type ProductListFilter struct {
+	Search string
+	Status string // "active" | "inactive" | ""
+	Limit  int
+	Offset int
+}
+
+// List returns a filtered, paginated page of products plus the total count of
+// rows matching the filter (before limit/offset). Uses nullable params so the
+// query stays a single static string — search "" and status "" both no-op.
+func (r *ProductRepo) List(ctx context.Context, f ProductListFilter) ([]ProductRow, int, error) {
+	// search: NULL when empty → the ILIKE condition short-circuits to TRUE.
+	var search *string
+	if s := strings.TrimSpace(f.Search); s != "" {
+		pat := "%" + s + "%"
+		search = &pat
+	}
+	// status → nullable bool: "active"→true, "inactive"→false, ""→NULL (no filter)
+	var activeFilter *bool
+	switch f.Status {
+	case "active":
+		t := true
+		activeFilter = &t
+	case "inactive":
+		fl := false
+		activeFilter = &fl
+	}
+
+	// The WHERE clause is shared by both the count and the page query.
+	const where = `
+WHERE ($1::text IS NULL OR p.name ILIKE $1 OR p.sku ILIKE $1)
+  AND ($2::bool IS NULL OR p.is_active = $2)
+`
+
+	var total int
+	if err := r.db.QueryRow(ctx, `SELECT count(*) FROM products p`+where, search, activeFilter).
+		Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
 	const q = `
 SELECT
   p.id::text, p.sku, p.name, p.description, p.cost::text,
@@ -96,16 +138,17 @@ SELECT
   p.created_at, p.updated_at
 FROM products p
 LEFT JOIN product_categories pc ON pc.id = p.category_id
+` + where + `
 ORDER BY p.created_at DESC
-LIMIT $1 OFFSET $2;
+LIMIT $3 OFFSET $4;
 `
-	rows, err := r.db.Query(ctx, q, limit, offset)
+	rows, err := r.db.Query(ctx, q, search, activeFilter, f.Limit, f.Offset)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 
-	out := make([]ProductRow, 0, limit)
+	out := make([]ProductRow, 0, f.Limit)
 	for rows.Next() {
 		var p ProductRow
 		if err := rows.Scan(
@@ -114,11 +157,11 @@ LIMIT $1 OFFSET $2;
 			&p.CategoryID, &p.CategoryName,
 			&p.CreatedAt, &p.UpdatedAt,
 		); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		out = append(out, p)
 	}
-	return out, rows.Err()
+	return out, total, rows.Err()
 }
 
 func (r *ProductRepo) Update(
