@@ -108,6 +108,7 @@ func (r *ProductRepo) List(ctx context.Context, f ProductListFilter) ([]ProductR
 		pat := "%" + s + "%"
 		search = &pat
 	}
+
 	// status → nullable bool: "active"→true, "inactive"→false, ""→NULL (no filter)
 	var activeFilter *bool
 	switch f.Status {
@@ -119,19 +120,34 @@ func (r *ProductRepo) List(ctx context.Context, f ProductListFilter) ([]ProductR
 		activeFilter = &fl
 	}
 
-	// The WHERE clause is shared by both the count and the page query.
 	const where = `
 WHERE ($1::text IS NULL OR p.name ILIKE $1 OR p.sku ILIKE $1)
   AND ($2::bool IS NULL OR p.is_active = $2)
 `
 
 	var total int
-	if err := r.db.QueryRow(ctx, `SELECT count(*) FROM products p`+where, search, activeFilter).
-		Scan(&total); err != nil {
+	if err := r.db.QueryRow(
+		ctx,
+		`SELECT count(*) FROM products p`+where,
+		search,
+		activeFilter,
+	).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 
-	const q = `
+	// Default: alphabetical by product name.
+	orderBy := "p.name ASC"
+
+	switch f.Sort {
+	case "newest":
+		orderBy = "p.created_at DESC"
+	case "oldest":
+		orderBy = "p.created_at ASC"
+	case "alphabet", "":
+
+	}
+
+	q := `
 SELECT
   p.id::text, p.sku, p.name, p.description, p.cost::text,
   p.is_active, p.stock_on_hand, p.stock_reserved,
@@ -140,13 +156,18 @@ SELECT
 FROM products p
 LEFT JOIN product_categories pc ON pc.id = p.category_id
 ` + where + `
-ORDER BY 
-  CASE WHEN $5 = 'alphabet' THEN p.name END,
-  CASE WHEN $5 = 'newest' THEN p.created_at END DESC,
-  CASE WHEN $5 = 'oldest' THEN p.created_at END
+ORDER BY ` + orderBy + `
 LIMIT $3 OFFSET $4;
 `
-	rows, err := r.db.Query(ctx, q, search, activeFilter, f.Limit, f.Offset)
+
+	rows, err := r.db.Query(
+		ctx,
+		q,
+		search,
+		activeFilter,
+		f.Limit,
+		f.Offset,
+	)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -165,7 +186,12 @@ LIMIT $3 OFFSET $4;
 		}
 		out = append(out, p)
 	}
-	return out, total, rows.Err()
+
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+
+	return out, total, nil
 }
 
 func (r *ProductRepo) GetByID(ctx context.Context, id string) (*ProductRow, error) {
