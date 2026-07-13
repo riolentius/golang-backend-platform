@@ -48,6 +48,15 @@ func (h *Handler) List(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"items": out.Items, "total": out.Total})
 }
 
+func (h *Handler) GetByID(c *fiber.Ctx) error {
+	id := c.Params("id")
+	out, err := h.uc.GetByID(c.Context(), id)
+	if err != nil {
+		return mapErr(c, err)
+	}
+	return c.JSON(out)
+}
+
 func (h *Handler) Update(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var req productuc.UpdateInput

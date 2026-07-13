@@ -47,6 +47,7 @@ type ListResult struct {
 type ProductStore interface {
 	Create(ctx context.Context, sku *string, name string, description *string, cost string, stockOnHand int, categoryID *string, createdByEmail *string) (*Product, error)
 	List(ctx context.Context, p ListParams) ([]Product, int, error)
+	GetByID(ctx context.Context, id string) (*Product, error)
 	Update(ctx context.Context, id string, sku *string, name *string, description *string, cost *string, isActive *bool, stockOnHand *int, categoryID *string, createdByEmail *string) (*Product, error)
 }
 
@@ -125,6 +126,13 @@ type UpdateInput struct {
 	IsActive    *bool   `json:"isActive"`
 	StockOnHand *int    `json:"stockOnHand"`
 	CategoryID  *string `json:"categoryId"`
+}
+
+func (u *Usecase) GetByID(ctx context.Context, id string) (*Product, error) {
+	if strings.TrimSpace(id) == "" {
+		return nil, ErrInvalidInput
+	}
+	return u.store.GetByID(ctx, id)
 }
 
 func (u *Usecase) Update(ctx context.Context, id string, in UpdateInput, createdByEmail *string) (*Product, error) {

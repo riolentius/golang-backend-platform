@@ -164,6 +164,29 @@ LIMIT $3 OFFSET $4;
 	return out, total, rows.Err()
 }
 
+func (r *ProductRepo) GetByID(ctx context.Context, id string) (*ProductRow, error) {
+	const q = `
+SELECT
+  p.id::text, p.sku, p.name, p.description, p.cost::text,
+  p.is_active, p.stock_on_hand, p.stock_reserved,
+  p.category_id::text, pc.name AS category_name,
+  p.created_at, p.updated_at
+FROM products p
+LEFT JOIN product_categories pc ON pc.id = p.category_id
+WHERE p.id = $1::uuid;
+`
+	var p ProductRow
+	if err := r.db.QueryRow(ctx, q, id).Scan(
+		&p.ID, &p.SKU, &p.Name, &p.Description, &p.Cost,
+		&p.IsActive, &p.StockOnHand, &p.StockReserved,
+		&p.CategoryID, &p.CategoryName,
+		&p.CreatedAt, &p.UpdatedAt,
+	); err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
 func (r *ProductRepo) Update(
 	ctx context.Context,
 	id string,

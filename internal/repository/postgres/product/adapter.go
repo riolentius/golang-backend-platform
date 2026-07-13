@@ -2,7 +2,9 @@ package postgres
 
 import (
 	"context"
+	"errors"
 
+	"github.com/jackc/pgx/v5"
 	productuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/product"
 )
 
@@ -49,6 +51,17 @@ func (a *ProductStoreAdapter) List(
 		out = append(out, *mapProductRowToUC(&rows[i]))
 	}
 	return out, total, nil
+}
+
+func (a *ProductStoreAdapter) GetByID(ctx context.Context, id string) (*productuc.Product, error) {
+	row, err := a.repo.GetByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, productuc.ErrNotFound
+		}
+		return nil, err
+	}
+	return mapProductRowToUC(row), nil
 }
 
 func (a *ProductStoreAdapter) Update(
