@@ -50,6 +50,7 @@ type ProductStore interface {
 	Create(ctx context.Context, sku *string, name string, description *string, cost string, stockOnHand int, categoryID *string, createdByEmail *string) (*Product, error)
 	List(ctx context.Context, p ListParams) ([]Product, int, error)
 	GetByID(ctx context.Context, id string) (*Product, error)
+	Delete(ctx context.Context, id string) error
 	Update(ctx context.Context, id string, sku *string, name *string, description *string, cost *string, isActive *bool, stockOnHand *int, categoryID *string, createdByEmail *string) (*Product, error)
 }
 
@@ -141,6 +142,13 @@ func (u *Usecase) GetByID(ctx context.Context, id string) (*Product, error) {
 		return nil, ErrInvalidInput
 	}
 	return u.store.GetByID(ctx, id)
+}
+
+func (u *Usecase) Delete(ctx context.Context, id string) error {
+	if strings.TrimSpace(id) == "" {
+		return ErrInvalidInput
+	}
+	return u.store.Delete(ctx, id)
 }
 
 func (u *Usecase) Update(ctx context.Context, id string, in UpdateInput, createdByEmail *string) (*Product, error) {

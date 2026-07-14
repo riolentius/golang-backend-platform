@@ -58,6 +58,14 @@ func (h *Handler) GetByID(c *fiber.Ctx) error {
 	return c.JSON(out)
 }
 
+func (h *Handler) Delete(c *fiber.Ctx) error {
+	id := c.Params("id")
+	if err := h.uc.Delete(c.Context(), id); err != nil {
+		return mapErr(c, err)
+	}
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
 func (h *Handler) Update(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var req productuc.UpdateInput

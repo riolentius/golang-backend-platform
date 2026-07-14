@@ -65,6 +65,16 @@ func (a *ProductStoreAdapter) GetByID(ctx context.Context, id string) (*productu
 	return mapProductRowToUC(row), nil
 }
 
+func (a *ProductStoreAdapter) Delete(ctx context.Context, id string) error {
+	if err := a.repo.SoftDelete(ctx, id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return productuc.ErrNotFound
+		}
+		return err
+	}
+	return nil
+}
+
 func (a *ProductStoreAdapter) Update(
 	ctx context.Context,
 	id string,

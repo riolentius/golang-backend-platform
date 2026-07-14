@@ -88,8 +88,6 @@ VALUES ($1::uuid, 'in', $2, 'initial', $3);
 	return &out, nil
 }
 
-// ProductListFilter mirrors product.ListParams without importing the usecase
-// package (avoids an import cycle — repo is downstream of usecase).
 type ProductListFilter struct {
 	Search string
 	Status string // "active" | "inactive" | ""
@@ -98,9 +96,6 @@ type ProductListFilter struct {
 	Sort   string // "alphabet" | "newest" | "oldest"
 }
 
-// List returns a filtered, paginated page of products plus the total count of
-// rows matching the filter (before limit/offset). Uses nullable params so the
-// query stays a single static string — search "" and status "" both no-op.
 func (r *ProductRepo) List(ctx context.Context, f ProductListFilter) ([]ProductRow, int, error) {
 	// search: NULL when empty → the ILIKE condition short-circuits to TRUE.
 	var search *string
@@ -121,7 +116,8 @@ func (r *ProductRepo) List(ctx context.Context, f ProductListFilter) ([]ProductR
 	}
 
 	const where = `
-WHERE ($1::text IS NULL OR p.name ILIKE $1 OR p.sku ILIKE $1)
+WHERE p.deleted_at IS NULL
+  AND ($1::text IS NULL OR p.name ILIKE $1 OR p.sku ILIKE $1)
   AND ($2::bool IS NULL OR p.is_active = $2)
 `
 
@@ -203,7 +199,7 @@ SELECT
   p.created_at, p.updated_at
 FROM products p
 LEFT JOIN product_categories pc ON pc.id = p.category_id
-WHERE p.id = $1::uuid;
+WHERE p.id = $1::uuid AND p.deleted_at IS NULL;
 `
 	var p ProductRow
 	if err := r.db.QueryRow(ctx, q, id).Scan(
@@ -215,6 +211,24 @@ WHERE p.id = $1::uuid;
 		return nil, err
 	}
 	return &p, nil
+}
+
+// SoftDelete marks a product deleted (sets deleted_at). Returns pgx.ErrNoRows if
+// the product doesn't exist or was already deleted, so callers can 404.
+func (r *ProductRepo) SoftDelete(ctx context.Context, id string) error {
+	const q = `
+UPDATE products
+SET deleted_at = now(), updated_at = now()
+WHERE id = $1::uuid AND deleted_at IS NULL;
+`
+	tag, err := r.db.Exec(ctx, q, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
 }
 
 func (r *ProductRepo) Update(
@@ -236,7 +250,7 @@ func (r *ProductRepo) Update(
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	var oldStock int
-	const lockQ = `SELECT stock_on_hand FROM products WHERE id = $1::uuid FOR UPDATE;`
+	const lockQ = `SELECT stock_on_hand FROM products WHERE id = $1::uuid AND deleted_at IS NULL FOR UPDATE;`
 	if err := tx.QueryRow(ctx, lockQ, id).Scan(&oldStock); err != nil {
 		return nil, err
 	}

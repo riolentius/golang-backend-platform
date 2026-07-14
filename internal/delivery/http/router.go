@@ -114,6 +114,7 @@ func RegisterRoutes(app *fiber.App, cfg config.Config, db *pgxpool.Pool) {
 	admin.Get("/products", productH.List)
 	admin.Get("/products/:id", productH.GetByID)
 	admin.Patch("/products/:id", productH.Update)
+	admin.Delete("/products/:id", productH.Delete)
 
 	// ── Stock movements ────────────────────────────────────────
 	stockRepo := stockpg.NewStockRepo(db)
