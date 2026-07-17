@@ -126,6 +126,8 @@ func mapErr(c *fiber.Ctx, err error) error {
 		errors.Is(err, txuc.ErrProductMissing),
 		errors.Is(err, txuc.ErrTransactionMissing):
 		return apierr.NotFound(c, err.Error())
+	case errors.Is(err, txuc.ErrPriceMissing):
+		return apierr.BadRequest(c, apierr.CodeInvalidInput, err.Error())
 	case errors.Is(err, txuc.ErrInvalidTransition):
 		return apierr.Conflict(c, apierr.CodeInvalidTransition, err.Error())
 	case errors.Is(err, txuc.ErrTransactionNotEditable):
