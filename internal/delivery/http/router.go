@@ -15,6 +15,7 @@ import (
 	producthandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/product"
 	prodcathandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/product_category"
 	pricehandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/product_price"
+	returnhandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/returns"
 	stockhandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/stock"
 	trxhandler "github.com/riolentius/cahaya-gading-backend/internal/delivery/http/handler/transaction"
 	"github.com/riolentius/cahaya-gading-backend/internal/delivery/middleware"
@@ -27,6 +28,7 @@ import (
 	productpg "github.com/riolentius/cahaya-gading-backend/internal/repository/postgres/product"
 	prodcatpg "github.com/riolentius/cahaya-gading-backend/internal/repository/postgres/product_category"
 	pricepg "github.com/riolentius/cahaya-gading-backend/internal/repository/postgres/product_price"
+	returnpg "github.com/riolentius/cahaya-gading-backend/internal/repository/postgres/returns"
 	stockpg "github.com/riolentius/cahaya-gading-backend/internal/repository/postgres/stock"
 	trxpg "github.com/riolentius/cahaya-gading-backend/internal/repository/postgres/transaction"
 	authuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/auth"
@@ -38,6 +40,7 @@ import (
 	productuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/product"
 	prodcatuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/product_category"
 	priceuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/product_price"
+	returnsuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/returns"
 	stockuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/stock"
 	txuc "github.com/riolentius/cahaya-gading-backend/internal/usecase/transaction"
 )
@@ -158,6 +161,16 @@ func RegisterRoutes(app *fiber.App, cfg config.Config, db *pgxpool.Pool) {
 	admin.Post("/transactions/:id/fulfill", trxH.Fulfill)
 	admin.Patch("/transactions/:id/status", trxH.UpdateStatus)
 	admin.Put("/transactions/:id/items", trxH.UpdateItems)
+
+	// ── Returns (post-fulfillment) ────────────────────────────
+	returnRepo := returnpg.NewReturnRepo(db)
+	returnStore := returnpg.NewReturnStoreAdapter(returnRepo)
+	returnUC := returnsuc.New(returnStore)
+	returnH := returnhandler.New(returnUC)
+
+	admin.Post("/transactions/:id/returns", returnH.CreateForTransaction)
+	admin.Get("/transactions/:id/returns", returnH.ListForTransaction)
+	admin.Get("/transactions/:id/returnable-items", returnH.ListReturnableItems)
 
 	// customer-scoped transaction history (used on the customer detail page)
 	admin.Get("/customers/:id/transactions", trxH.ListByCustomer)
