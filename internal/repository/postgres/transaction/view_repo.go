@@ -86,20 +86,31 @@ WHERE t.id = $1::uuid;
 }
 
 func (r *TransactionRepo) GetViewItems(ctx context.Context, id string) ([]TransactionViewItemRow, error) {
+	// Net-of-returns view (Option A): each line shows sold qty minus everything
+	// returned against it, line_total is recomputed from the net qty, and lines
+	// that were fully returned (net 0) are dropped. The underlying transaction_items
+	// rows are never mutated — returns live in their own tables — so this only
+	// affects how the invoice reads, not the sale record.
 	const q = `
 SELECT
   ti.product_id::text,
   p.sku,
   p.name,
-  ti.qty,
+  (ti.qty - COALESCE(r.returned_qty, 0))                    AS net_qty,
   ti.unit_amount::text,
-  ti.line_total::text,
+  (ti.unit_amount * (ti.qty - COALESCE(r.returned_qty, 0)))::text AS net_line_total,
   p.pack_size::text,
   p.base_product_id::text,
   COALESCE(p.base_product_id, p.id)::text AS stock_product_id
 FROM transaction_items ti
 JOIN products p ON p.id = ti.product_id
+LEFT JOIN (
+  SELECT transaction_item_id, SUM(qty)::int AS returned_qty
+  FROM return_items
+  GROUP BY transaction_item_id
+) r ON r.transaction_item_id = ti.id
 WHERE ti.transaction_id = $1::uuid
+  AND (ti.qty - COALESCE(r.returned_qty, 0)) > 0
 ORDER BY ti.created_at ASC;
 `
 	rows, err := r.db.Query(ctx, q, id)
