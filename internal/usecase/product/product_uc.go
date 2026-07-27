@@ -46,12 +46,27 @@ type ListResult struct {
 	Total int       `json:"total"`
 }
 
+// ExportRow is one flattened product line for the Excel export: the three
+// category prices pivoted onto a single row alongside stock figures.
+type ExportRow struct {
+	Name          string `json:"name"`
+	SKU           string `json:"sku"`
+	Cost          string `json:"cost"`
+	PriceRegular  string `json:"priceRegular"`
+	PriceSpecial  string `json:"priceSpecial"`
+	PriceVIP      string `json:"priceVip"`
+	StockOnHand   int    `json:"stockOnHand"`
+	StockReserved int    `json:"stockReserved"`
+	IsActive      bool   `json:"isActive"`
+}
+
 type ProductStore interface {
 	Create(ctx context.Context, sku *string, name string, description *string, cost string, stockOnHand int, categoryID *string, createdByEmail *string) (*Product, error)
 	List(ctx context.Context, p ListParams) ([]Product, int, error)
 	GetByID(ctx context.Context, id string) (*Product, error)
 	Delete(ctx context.Context, id string) error
 	Update(ctx context.Context, id string, sku *string, name *string, description *string, cost *string, isActive *bool, stockOnHand *int, categoryID *string, createdByEmail *string) (*Product, error)
+	ExportRows(ctx context.Context) ([]ExportRow, error)
 }
 
 type Usecase struct {
@@ -149,6 +164,10 @@ func (u *Usecase) Delete(ctx context.Context, id string) error {
 		return ErrInvalidInput
 	}
 	return u.store.Delete(ctx, id)
+}
+
+func (u *Usecase) Export(ctx context.Context) ([]ExportRow, error) {
+	return u.store.ExportRows(ctx)
 }
 
 func (u *Usecase) Update(ctx context.Context, id string, in UpdateInput, createdByEmail *string) (*Product, error) {

@@ -190,6 +190,61 @@ LIMIT $3 OFFSET $4;
 	return out, total, nil
 }
 
+type ProductExportRow struct {
+	Name          string
+	SKU           string
+	Cost          string
+	PriceRegular  string
+	PriceSpecial  string
+	PriceVIP      string
+	StockOnHand   int
+	StockReserved int
+	IsActive      bool
+}
+
+// ExportRows returns every live product flattened for Excel export, with the
+// three category prices pivoted onto one row via conditional aggregation.
+// A category with no price set renders as "0".
+func (r *ProductRepo) ExportRows(ctx context.Context) ([]ProductExportRow, error) {
+	const q = `
+SELECT
+  p.name,
+  COALESCE(p.sku, '') AS sku,
+  p.cost::text,
+  COALESCE(MAX(pp.amount) FILTER (WHERE cc.code = 'REGULAR'), 0)::text AS price_regular,
+  COALESCE(MAX(pp.amount) FILTER (WHERE cc.code = 'SPECIAL'), 0)::text AS price_special,
+  COALESCE(MAX(pp.amount) FILTER (WHERE cc.code = 'VIP'), 0)::text     AS price_vip,
+  p.stock_on_hand,
+  p.stock_reserved,
+  p.is_active
+FROM products p
+LEFT JOIN product_prices pp      ON pp.product_id = p.id
+LEFT JOIN customer_categories cc ON cc.id = pp.category_id
+WHERE p.deleted_at IS NULL
+GROUP BY p.id, p.name, p.sku, p.cost, p.stock_on_hand, p.stock_reserved, p.is_active
+ORDER BY p.name ASC;
+`
+	rows, err := r.db.Query(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]ProductExportRow, 0, 512)
+	for rows.Next() {
+		var e ProductExportRow
+		if err := rows.Scan(
+			&e.Name, &e.SKU, &e.Cost,
+			&e.PriceRegular, &e.PriceSpecial, &e.PriceVIP,
+			&e.StockOnHand, &e.StockReserved, &e.IsActive,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
 func (r *ProductRepo) GetByID(ctx context.Context, id string) (*ProductRow, error) {
 	const q = `
 SELECT

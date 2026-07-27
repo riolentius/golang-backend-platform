@@ -115,6 +115,7 @@ func RegisterRoutes(app *fiber.App, cfg config.Config, db *pgxpool.Pool) {
 
 	admin.Post("/products", productH.Create)
 	admin.Get("/products", productH.List)
+	admin.Get("/products/export", productH.Export)
 	admin.Get("/products/:id", productH.GetByID)
 	admin.Patch("/products/:id", productH.Update)
 	admin.Delete("/products/:id", productH.Delete)

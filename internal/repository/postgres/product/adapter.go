@@ -75,6 +75,28 @@ func (a *ProductStoreAdapter) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+func (a *ProductStoreAdapter) ExportRows(ctx context.Context) ([]productuc.ExportRow, error) {
+	rows, err := a.repo.ExportRows(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]productuc.ExportRow, 0, len(rows))
+	for i := range rows {
+		out = append(out, productuc.ExportRow{
+			Name:          rows[i].Name,
+			SKU:           rows[i].SKU,
+			Cost:          rows[i].Cost,
+			PriceRegular:  rows[i].PriceRegular,
+			PriceSpecial:  rows[i].PriceSpecial,
+			PriceVIP:      rows[i].PriceVIP,
+			StockOnHand:   rows[i].StockOnHand,
+			StockReserved: rows[i].StockReserved,
+			IsActive:      rows[i].IsActive,
+		})
+	}
+	return out, nil
+}
+
 func (a *ProductStoreAdapter) Update(
 	ctx context.Context,
 	id string,

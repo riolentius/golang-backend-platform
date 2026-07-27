@@ -66,6 +66,15 @@ func (h *Handler) Delete(c *fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
+func (h *Handler) Export(c *fiber.Ctx) error {
+	rows, err := h.uc.Export(c.Context())
+	if err != nil {
+		log.Printf("[product.export] unexpected error: %v", err)
+		return apierr.Internal(c)
+	}
+	return c.JSON(fiber.Map{"items": rows})
+}
+
 func (h *Handler) Update(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var req productuc.UpdateInput
