@@ -37,14 +37,15 @@ type TrxStockMove struct {
 }
 
 type TransactionItemRow struct {
-	ID            string
-	TransactionID string
-	ProductID     string
-	Qty           int
-	UnitAmount    string
-	LineTotal     string
-	CreatedAt     interface{}
-	UpdatedAt     interface{}
+	ID             string
+	TransactionID  string
+	ProductID      string
+	Qty            int
+	UnitAmount     string
+	DiscountAmount string
+	LineTotal      string
+	CreatedAt      interface{}
+	UpdatedAt      interface{}
 }
 
 type TransactionRepo struct {
@@ -143,16 +144,16 @@ RETURNING id::text, customer_id::text, status, currency, total_amount::text, not
 	return &out, nil
 }
 
-func insertTransactionItem(ctx context.Context, tx pgx.Tx, transactionID string, productID string, qty int, unitAmount string, lineTotal string) (*TransactionItemRow, error) {
+func insertTransactionItem(ctx context.Context, tx pgx.Tx, transactionID string, productID string, qty int, unitAmount string, discountAmount string, lineTotal string) (*TransactionItemRow, error) {
 	const q = `
-INSERT INTO transaction_items (transaction_id, product_id, qty, unit_amount, line_total)
-VALUES ($1::uuid, $2::uuid, $3, $4::numeric, $5::numeric)
-RETURNING id::text, transaction_id::text, product_id::text, qty, unit_amount::text, line_total::text, created_at, updated_at;
+INSERT INTO transaction_items (transaction_id, product_id, qty, unit_amount, discount_amount, line_total)
+VALUES ($1::uuid, $2::uuid, $3, $4::numeric, $5::numeric, $6::numeric)
+RETURNING id::text, transaction_id::text, product_id::text, qty, unit_amount::text, discount_amount::text, line_total::text, created_at, updated_at;
 `
-	row := tx.QueryRow(ctx, q, transactionID, productID, qty, unitAmount, lineTotal)
+	row := tx.QueryRow(ctx, q, transactionID, productID, qty, unitAmount, discountAmount, lineTotal)
 
 	var out TransactionItemRow
-	if err := row.Scan(&out.ID, &out.TransactionID, &out.ProductID, &out.Qty, &out.UnitAmount, &out.LineTotal, &out.CreatedAt, &out.UpdatedAt); err != nil {
+	if err := row.Scan(&out.ID, &out.TransactionID, &out.ProductID, &out.Qty, &out.UnitAmount, &out.DiscountAmount, &out.LineTotal, &out.CreatedAt, &out.UpdatedAt); err != nil {
 		return nil, err
 	}
 	return &out, nil

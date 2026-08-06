@@ -97,8 +97,8 @@ SELECT
   p.sku,
   p.name,
   (ti.qty - COALESCE(r.returned_qty, 0))                    AS net_qty,
-  ti.unit_amount::text,
-  (ti.unit_amount * (ti.qty - COALESCE(r.returned_qty, 0)))::text AS net_line_total,
+  (ti.unit_amount - ti.discount_amount)::text              AS unit_amount,
+  ((ti.unit_amount - ti.discount_amount) * (ti.qty - COALESCE(r.returned_qty, 0)))::text AS net_line_total,
   p.pack_size::text,
   p.base_product_id::text,
   COALESCE(p.base_product_id, p.id)::text AS stock_product_id

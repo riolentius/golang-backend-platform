@@ -16,14 +16,15 @@ type Transaction struct {
 }
 
 type Item struct {
-	ID            string    `json:"id"`
-	TransactionID string    `json:"transactionId"`
-	ProductID     string    `json:"productId"`
-	Qty           int       `json:"qty"`
-	UnitAmount    string    `json:"unitAmount"`
-	LineTotal     string    `json:"lineTotal"`
-	CreatedAt     time.Time `json:"createdAt"`
-	UpdatedAt     time.Time `json:"updatedAt"`
+	ID             string    `json:"id"`
+	TransactionID  string    `json:"transactionId"`
+	ProductID      string    `json:"productId"`
+	Qty            int       `json:"qty"`
+	UnitAmount     string    `json:"unitAmount"`
+	DiscountAmount string    `json:"discountAmount"`
+	LineTotal      string    `json:"lineTotal"`
+	CreatedAt      time.Time `json:"createdAt"`
+	UpdatedAt      time.Time `json:"updatedAt"`
 }
 
 type CreateInput struct {
@@ -36,6 +37,9 @@ type CreateInput struct {
 type CreateItemIn struct {
 	ProductID string `json:"productId"`
 	Qty       int    `json:"qty"`
+	// Discount is the per-unit discount in currency units (e.g. "3000").
+	// Optional; empty or "0" means no discount. line_total = (unitPrice - discount) * qty.
+	Discount string `json:"discount"`
 }
 
 type ListInput struct {
@@ -63,6 +67,7 @@ type UpdateItemsInput struct {
 type UpdateItemIn struct {
 	ProductID string `json:"productId"`
 	Qty       int    `json:"qty"`
+	Discount  string `json:"discount"`
 }
 
 type CustomerTransactionSummary struct {

@@ -90,10 +90,15 @@ func (a *TransactionStoreAdapter) Create(ctx context.Context, in trxuc.CreateInp
 			return nil, err
 		}
 
-		line := unit * float64(it.Qty)
+		disc, err := parseDiscount(it.Discount, unit)
+		if err != nil {
+			return nil, err
+		}
+
+		line := (unit - disc) * float64(it.Qty)
 		totalCents += line
 
-		itemRow, err := insertTransactionItem(ctx, tx, trxRow.ID, it.ProductID, it.Qty, unitStr, formatMoney(line))
+		itemRow, err := insertTransactionItem(ctx, tx, trxRow.ID, it.ProductID, it.Qty, unitStr, formatMoney(disc), formatMoney(line))
 		if err != nil {
 			return nil, err
 		}
@@ -215,7 +220,7 @@ WHERE t.id = $1::uuid;
 
 	// fetch items
 	const itemQ = `
-SELECT id::text, transaction_id::text, product_id::text, qty, unit_amount::text, line_total::text, created_at, updated_at
+SELECT id::text, transaction_id::text, product_id::text, qty, unit_amount::text, discount_amount::text, line_total::text, created_at, updated_at
 FROM transaction_items
 WHERE transaction_id = $1::uuid
 ORDER BY created_at ASC;
@@ -231,7 +236,7 @@ ORDER BY created_at ASC;
 		var it TransactionItemRow
 		if err := rows.Scan(
 			&it.ID, &it.TransactionID, &it.ProductID,
-			&it.Qty, &it.UnitAmount, &it.LineTotal,
+			&it.Qty, &it.UnitAmount, &it.DiscountAmount, &it.LineTotal,
 			&it.CreatedAt, &it.UpdatedAt,
 		); err != nil {
 			return nil, err
@@ -387,10 +392,15 @@ func (a *TransactionStoreAdapter) UpdateItems(ctx context.Context, id string, it
 			return nil, err
 		}
 
-		line := unit * float64(it.Qty)
+		disc, err := parseDiscount(it.Discount, unit)
+		if err != nil {
+			return nil, err
+		}
+
+		line := (unit - disc) * float64(it.Qty)
 		totalCents += line
 
-		if _, err := insertTransactionItem(ctx, tx, id, it.ProductID, it.Qty, unitStr, formatMoney(line)); err != nil {
+		if _, err := insertTransactionItem(ctx, tx, id, it.ProductID, it.Qty, unitStr, formatMoney(disc), formatMoney(line)); err != nil {
 			return nil, err
 		}
 	}
@@ -472,14 +482,15 @@ func mapTrxRow(r *TransactionRow) *trxuc.Transaction {
 
 func mapTrxItemRow(r *TransactionItemRow) trxuc.Item {
 	return trxuc.Item{
-		ID:            r.ID,
-		TransactionID: r.TransactionID,
-		ProductID:     r.ProductID,
-		Qty:           r.Qty,
-		UnitAmount:    r.UnitAmount,
-		LineTotal:     r.LineTotal,
-		CreatedAt:     mustTime(r.CreatedAt),
-		UpdatedAt:     mustTime(r.UpdatedAt),
+		ID:             r.ID,
+		TransactionID:  r.TransactionID,
+		ProductID:      r.ProductID,
+		Qty:            r.Qty,
+		UnitAmount:     r.UnitAmount,
+		DiscountAmount: r.DiscountAmount,
+		LineTotal:      r.LineTotal,
+		CreatedAt:      mustTime(r.CreatedAt),
+		UpdatedAt:      mustTime(r.UpdatedAt),
 	}
 }
 
@@ -494,6 +505,24 @@ func mustTime(v any) time.Time {
 func formatMoney(v float64) string {
 	// numeric(18,2) formatting
 	return strconv.FormatFloat(v, 'f', 2, 64)
+}
+
+func parseDiscount(raw string, unit float64) (float64, error) {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return 0, nil
+	}
+	d, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0, errors.New("discount is not a valid number")
+	}
+	if d < 0 {
+		return 0, errors.New("discount cannot be negative")
+	}
+	if d > unit {
+		return 0, errors.New("discount cannot exceed the unit price")
+	}
+	return d, nil
 }
 
 func (a *TransactionStoreAdapter) ReserveStockForTx(ctx context.Context, transactionID string) error {

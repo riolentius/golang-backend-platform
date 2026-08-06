@@ -163,7 +163,7 @@ WHERE transaction_item_id = $1::uuid AND return_id <> $2::uuid;
 		const insItemQ = `
 INSERT INTO return_items
   (return_id, transaction_item_id, product_id, qty, unit_amount, line_total, restock)
-SELECT $1::uuid, ti.id, ti.product_id, $2::int, ti.unit_amount, (ti.unit_amount * $2::int), $3::boolean
+SELECT $1::uuid, ti.id, ti.product_id, $2::int, (ti.unit_amount - ti.discount_amount), ((ti.unit_amount - ti.discount_amount) * $2::int), $3::boolean
 FROM transaction_items ti
 WHERE ti.id = $4::uuid
 RETURNING id::text, return_id::text, transaction_item_id::text, product_id::text,
@@ -205,7 +205,6 @@ RETURNING total_amount::text;
 		return nil, nil, nil, fmt.Errorf("roll up return total: %w", err)
 	}
 
-	// 5) reduce the transaction total by the returned value
 	const updTotalQ = `
 UPDATE transactions
 SET total_amount = GREATEST(total_amount - $2::numeric, 0),
@@ -216,9 +215,6 @@ WHERE id = $1::uuid;
 		return nil, nil, nil, fmt.Errorf("reduce transaction total (by %s): %w", hdr.TotalAmount, err)
 	}
 
-	// 6) re-derive payment_status against the new total. paid_amount is left
-	// untouched on purpose: a return moves no money, it just means the customer
-	// has now overpaid relative to the reduced total.
 	const recomputeQ = `
 UPDATE transactions
 SET payment_status = CASE
@@ -370,7 +366,7 @@ SELECT
   ti.product_id::text,
   p.name,
   p.sku,
-  ti.unit_amount::text,
+  (ti.unit_amount - ti.discount_amount)::text AS unit_amount,
   ti.qty,
   COALESCE(SUM(ri.qty), 0)::int              AS qty_returned,
   (ti.qty - COALESCE(SUM(ri.qty), 0))::int   AS qty_returnable
@@ -378,7 +374,7 @@ FROM transaction_items ti
 JOIN products p ON p.id = ti.product_id
 LEFT JOIN return_items ri ON ri.transaction_item_id = ti.id
 WHERE ti.transaction_id = $1::uuid
-GROUP BY ti.id, ti.product_id, p.name, p.sku, ti.unit_amount, ti.qty
+GROUP BY ti.id, ti.product_id, p.name, p.sku, ti.unit_amount, ti.discount_amount, ti.qty
 ORDER BY p.name ASC;
 `
 	rows, err := r.db.Query(ctx, q, transactionID)
