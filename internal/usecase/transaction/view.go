@@ -21,12 +21,13 @@ type TransactionView struct {
 }
 
 type ViewItem struct {
-	ProductID   string  `json:"productId"`
-	SKU         *string `json:"sku,omitempty"`
-	ProductName string  `json:"productName"`
-	Qty         int     `json:"qty"`
-	UnitAmount  string  `json:"unitAmount"`
-	LineTotal   string  `json:"lineTotal"`
+	ProductID      string  `json:"productId"`
+	SKU            *string `json:"sku,omitempty"`
+	ProductName    string  `json:"productName"`
+	Qty            int     `json:"qty"`
+	UnitAmount     string  `json:"unitAmount"`
+	DiscountAmount string  `json:"discountAmount"`
+	LineTotal      string  `json:"lineTotal"`
 
 	PackSize       string  `json:"packSize"`
 	BaseProductID  *string `json:"baseProductId,omitempty"`

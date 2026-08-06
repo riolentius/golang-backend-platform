@@ -21,12 +21,13 @@ type TransactionViewHeaderRow struct {
 }
 
 type TransactionViewItemRow struct {
-	ProductID   string
-	SKU         *string
-	ProductName string
-	Qty         int
-	UnitAmount  string
-	LineTotal   string
+	ProductID      string
+	SKU            *string
+	ProductName    string
+	Qty            int
+	UnitAmount     string
+	DiscountAmount string
+	LineTotal      string
 
 	PackSize       string
 	BaseProductID  *string
@@ -97,7 +98,8 @@ SELECT
   p.sku,
   p.name,
   (ti.qty - COALESCE(r.returned_qty, 0))                    AS net_qty,
-  (ti.unit_amount - ti.discount_amount)::text              AS unit_amount,
+  ti.unit_amount::text                                     AS unit_amount,
+  ti.discount_amount::text                                 AS discount_amount,
   ((ti.unit_amount - ti.discount_amount) * (ti.qty - COALESCE(r.returned_qty, 0)))::text AS net_line_total,
   p.pack_size::text,
   p.base_product_id::text,
@@ -128,6 +130,7 @@ ORDER BY ti.created_at ASC;
 			&it.ProductName,
 			&it.Qty,
 			&it.UnitAmount,
+			&it.DiscountAmount,
 			&it.LineTotal,
 			&it.PackSize,
 			&it.BaseProductID,

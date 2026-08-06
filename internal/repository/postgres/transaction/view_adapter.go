@@ -50,12 +50,13 @@ func (a *TransactionStoreAdapter) GetViewByID(ctx context.Context, id string) (*
 
 	for _, it := range items {
 		out.Items = append(out.Items, trxuc.ViewItem{
-			ProductID:   it.ProductID,
-			SKU:         it.SKU,
-			ProductName: it.ProductName,
-			Qty:         it.Qty,
-			UnitAmount:  it.UnitAmount,
-			LineTotal:   it.LineTotal,
+			ProductID:      it.ProductID,
+			SKU:            it.SKU,
+			ProductName:    it.ProductName,
+			Qty:            it.Qty,
+			UnitAmount:     it.UnitAmount,
+			DiscountAmount: it.DiscountAmount,
+			LineTotal:      it.LineTotal,
 
 			// NEW: helps you validate conversion in /view
 			PackSize:       it.PackSize,
